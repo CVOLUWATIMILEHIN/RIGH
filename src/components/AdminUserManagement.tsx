@@ -7,7 +7,6 @@ import React, { useState, useEffect } from "react";
 import { 
   Users, 
   Search, 
-  Plus, 
   UserMinus, 
   UserCheck, 
   Edit, 
@@ -21,11 +20,41 @@ import {
   CheckCircle,
   XCircle,
   Send,
-  Download
+  Download,
+  Lock,
+  Check,
+  ShieldCheck
 } from "lucide-react";
-import { PlatformUser, getPlatformUsers, savePlatformUser, deletePlatformUser } from "../lib/db";
+import {
+  PlatformUser,
+  getPlatformUsers,
+  savePlatformUser,
+  deletePlatformUser,
+  saveAdminOperator,
+  deleteAdminOperator,
+  ANCHOR_SUPER_ADMIN_EMAILS,
+  getFirebaseConfig
+} from "../lib/db";
+import {
+  ADMIN_MODULE_GROUPS,
+  ADMIN_ACCESS_PRESETS,
+  DEFAULT_LIMITED_ADMIN_TABS,
+  AdminTabType
+} from "./AdminSidebar";
 
 const DEFAULT_USERS: PlatformUser[] = [
+  {
+    id: "usr-5",
+    fullName: "Louis Olosunde (System Owner)",
+    email: "olosundelouis@gmail.com",
+    phone: "+234 815 678 9012",
+    role: "Admin",
+    status: "Active",
+    joinedAt: "2026-06-01T10:00:00.000Z",
+    location: "Lagos State",
+    emailVerified: true,
+    canWrite: true
+  },
   {
     id: "usr-1",
     fullName: "Adebayo Adesina",
@@ -34,7 +63,9 @@ const DEFAULT_USERS: PlatformUser[] = [
     role: "Admin",
     status: "Active",
     joinedAt: "2026-05-10T11:00:00.000Z",
-    location: "Lagos State"
+    location: "Lagos State",
+    allowedTabs: ["dashboard", "reg-cii", "reg-rma", "events", "visitors-live"],
+    canWrite: true
   },
   {
     id: "usr-2",
@@ -44,7 +75,9 @@ const DEFAULT_USERS: PlatformUser[] = [
     role: "Mentor",
     status: "Active",
     joinedAt: "2026-05-12T14:30:00.000Z",
-    location: "Enugu State"
+    location: "Enugu State",
+    allowedTabs: ["dashboard", "reg-cii", "reg-rma", "lms-courses", "lms-students"],
+    canWrite: false
   },
   {
     id: "usr-3",
@@ -54,7 +87,9 @@ const DEFAULT_USERS: PlatformUser[] = [
     role: "Viewer",
     status: "Suspended",
     joinedAt: "2026-04-20T09:15:00.000Z",
-    location: "Ogun State"
+    location: "Ogun State",
+    allowedTabs: ["dashboard", "visitors-analytics"],
+    canWrite: false
   },
   {
     id: "usr-4",
@@ -64,45 +99,50 @@ const DEFAULT_USERS: PlatformUser[] = [
     role: "Mentor",
     status: "Active",
     joinedAt: "2026-05-15T16:20:00.000Z",
-    location: "Kaduna State"
-  },
-  {
-    id: "usr-5",
-    fullName: "Louis Olosunde",
-    email: "olosundelouis@gmail.com",
-    phone: "+234 815 678 9012",
-    role: "Admin",
-    status: "Active",
-    joinedAt: "2026-06-01T10:00:00.000Z",
-    location: "Lagos State"
+    location: "Kaduna State",
+    allowedTabs: ["dashboard", "teen-bootcamp", "events"],
+    canWrite: false
   }
 ];
 
 interface AdminUserManagementProps {
   hasWriteAccess: boolean;
+  isSuperAdmin?: boolean;
+  currentAdminEmail?: string;
   onLogAction: (msg: string) => void;
 }
 
-export default function AdminUserManagement({ hasWriteAccess, onLogAction }: AdminUserManagementProps) {
+export default function AdminUserManagement({
+  hasWriteAccess,
+  isSuperAdmin = false,
+  currentAdminEmail = "",
+  onLogAction
+}: AdminUserManagementProps) {
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [verifyFilter, setVerifyFilter] = useState("all");
   const [resendStatus, setResendStatus] = useState<{ id: string; success: boolean; message: string } | null>(null);
-  
+  const [formNotice, setFormNotice] = useState<{ text: string; type: "error" | "success" } | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
-  
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
   // Form State
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
     phone: "",
-    role: "Admin" as PlatformUser["role"],
+    password: "",
+    role: (isSuperAdmin ? "Admin" : "Student") as PlatformUser["role"],
     location: "",
-    status: "Active" as PlatformUser["status"]
+    status: "Active" as PlatformUser["status"],
+    canWrite: true,
+    allowedTabs: [...DEFAULT_LIMITED_ADMIN_TABS] as string[]
   });
 
   // Load from Live Firestore
@@ -112,7 +152,6 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
       if (liveUsers && liveUsers.length > 0) {
         setUsers(liveUsers);
       } else {
-        // If Firestore is empty, seed it with defaults
         setUsers(DEFAULT_USERS);
         for (const u of DEFAULT_USERS) {
           await savePlatformUser(u);
@@ -126,121 +165,255 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
 
   useEffect(() => {
     loadUsers();
-
-    // Listen to real-time events triggered by the central Firestore subscription
     window.addEventListener("rma_platform_users_updated", loadUsers);
+    window.addEventListener("rma_admin_operators_updated", loadUsers);
     return () => {
       window.removeEventListener("rma_platform_users_updated", loadUsers);
+      window.removeEventListener("rma_admin_operators_updated", loadUsers);
     };
   }, []);
+
+  const isTargetSuperAdminEmail = (email: string) =>
+    ANCHOR_SUPER_ADMIN_EMAILS.includes((email || "").trim().toLowerCase());
 
   // Open Add Modal
   const handleOpenAddModal = () => {
     setEditingUser(null);
+    setFormNotice(null);
     setFormData({
       fullName: "",
       email: "",
-      phone: "",
-      role: "Admin",
-      location: "",
-      status: "Active"
+      phone: "+234 ",
+      password: "",
+      role: isSuperAdmin ? "Admin" : "Student",
+      location: "Lagos State",
+      status: "Active",
+      canWrite: isSuperAdmin ? true : false,
+      allowedTabs: [...DEFAULT_LIMITED_ADMIN_TABS]
     });
     setIsModalOpen(true);
   };
 
   // Open Edit Modal
   const handleOpenEditModal = (user: PlatformUser) => {
+    if ((user.role === "Admin" || isTargetSuperAdminEmail(user.email)) && !isSuperAdmin) {
+      setFormNotice({
+        text: "Only the System Owner (Super Admin) can modify Admin accounts or their permissions.",
+        type: "error"
+      });
+      return;
+    }
     setEditingUser(user);
+    setFormNotice(null);
     setFormData({
       fullName: user.fullName,
       email: user.email,
       phone: user.phone,
+      password: "",
       role: user.role,
       location: user.location,
-      status: user.status
+      status: user.status,
+      canWrite: user.canWrite ?? (user.role === "Admin"),
+      allowedTabs:
+        Array.isArray(user.allowedTabs) && user.allowedTabs.length > 0
+          ? [...user.allowedTabs]
+          : [...DEFAULT_LIMITED_ADMIN_TABS]
     });
     setIsModalOpen(true);
+  };
+
+  const toggleAllowedTab = (tabId: AdminTabType) => {
+    setFormData((prev) => {
+      const exists = prev.allowedTabs.includes(tabId);
+      const next = exists
+        ? prev.allowedTabs.filter((t) => t !== tabId)
+        : [...prev.allowedTabs, tabId];
+      return { ...prev, allowedTabs: next };
+    });
+  };
+
+  const applyPreset = (tabs: AdminTabType[], canWrite: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      allowedTabs: [...tabs],
+      canWrite
+    }));
   };
 
   // Form Submit Add / Edit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormNotice(null);
+
     if (!hasWriteAccess) {
-      alert("Access Denied: You do not have permission to modify records.");
+      setFormNotice({ text: "Access Denied: You do not have permission to modify records.", type: "error" });
       return;
     }
 
-    if (editingUser) {
-      // Edit mode
-      const updatedUser: PlatformUser = {
-        ...editingUser,
-        fullName: formData.fullName,
-        email: formData.email,
-        phone: formData.phone,
-        role: formData.role,
-        location: formData.location,
-        status: formData.status
-      };
-      await savePlatformUser(updatedUser);
-      onLogAction(`👥 [USERS] Updated access permissions for user: ${formData.fullName} (Role: ${formData.role}, Status: ${formData.status})`);
-    } else {
-      // Add mode
-      const newUser: PlatformUser = {
-        id: `usr-${Date.now()}`,
-        fullName: formData.fullName,
-        email: formData.email,
-        phone: formData.phone,
-        role: formData.role,
-        location: formData.location,
-        status: formData.status,
-        joinedAt: new Date().toISOString()
-      };
-      await savePlatformUser(newUser);
-      onLogAction(`👥 [USERS] Assigned new administrative credentials to: ${formData.fullName} (Role: ${formData.role})`);
+    const cleanEmail = formData.email.trim().toLowerCase();
+    const isAdminOrStaffRole = formData.role === "Admin" || formData.role === "Viewer" || formData.role === "Mentor";
+
+    if (formData.role === "Admin" && !isSuperAdmin) {
+      setFormNotice({
+        text: "Access Denied: Only the System Owner (Super Admin) can create or configure Admin users.",
+        type: "error"
+      });
+      return;
     }
-    setIsModalOpen(false);
-    loadUsers();
+
+    if (!editingUser && formData.role === "Admin" && formData.password.trim().length < 8) {
+      setFormNotice({
+        text: "Please set a login password of at least 8 characters for this new Admin user.",
+        type: "error"
+      });
+      return;
+    }
+
+    if (isAdminOrStaffRole && formData.allowedTabs.length === 0) {
+      setFormNotice({
+        text: "Please select at least 1 module (e.g. Overview) that this user is allowed to access.",
+        type: "error"
+      });
+      return;
+    }
+
+    setIsSavingUser(true);
+    try {
+      if (isAdminOrStaffRole && isSuperAdmin) {
+        // Persist in Admin Operators Directory (`admins` collection + local cache + server)
+        const opRecord = await saveAdminOperator({
+          email: cleanEmail,
+          fullName: formData.fullName.trim(),
+          passwordInput: formData.password.trim() || undefined,
+          role: formData.role === "Viewer" ? "Viewer (Read Only)" : "Admin",
+          allowedTabs: formData.allowedTabs,
+          canWrite: formData.role === "Viewer" ? false : formData.canWrite,
+          status: formData.status === "Suspended" ? "Suspended" : "Active",
+          createdBy: currentAdminEmail || "olosundelouis@gmail.com"
+        });
+
+        // Provision in Firebase Auth if password was provided
+        if (formData.password.trim().length >= 8) {
+          try {
+            const { initializeApp, deleteApp, getApps } = await import("firebase/app");
+            const { getAuth, createUserWithEmailAndPassword, signOut: fbSignOut } = await import("firebase/auth");
+            const firebaseConfig = await getFirebaseConfig();
+            const appName = "RMATempUserProvisionApp";
+            const existingApp = getApps().find((a) => a.name === appName);
+            const tempApp = existingApp || initializeApp(firebaseConfig, appName);
+            const tempAuth = getAuth(tempApp);
+            await createUserWithEmailAndPassword(tempAuth, cleanEmail, formData.password.trim()).catch(() => null);
+            await fbSignOut(tempAuth).catch(() => null);
+            await deleteApp(tempApp).catch(() => null);
+          } catch {}
+        }
+
+        const updatedUser: PlatformUser = {
+          id: editingUser?.id || `usr-${Date.now()}`,
+          fullName: formData.fullName.trim(),
+          email: cleanEmail,
+          phone: formData.phone.trim(),
+          role: formData.role,
+          location: formData.location.trim(),
+          status: formData.status,
+          joinedAt: editingUser?.joinedAt || new Date().toISOString(),
+          emailVerified: true,
+          verificationDate: editingUser?.verificationDate || new Date().toISOString(),
+          allowedTabs: formData.allowedTabs,
+          canWrite: formData.role === "Viewer" ? false : formData.canWrite,
+          passwordDigest: opRecord.passwordDigest || editingUser?.passwordDigest
+        };
+        await savePlatformUser(updatedUser);
+      } else {
+        const userRecord: PlatformUser = {
+          id: editingUser?.id || `usr-${Date.now()}`,
+          fullName: formData.fullName.trim(),
+          email: cleanEmail,
+          phone: formData.phone.trim(),
+          role: isSuperAdmin ? formData.role : "Student",
+          location: formData.location.trim(),
+          status: formData.status,
+          joinedAt: editingUser?.joinedAt || new Date().toISOString(),
+          emailVerified: editingUser?.emailVerified ?? false,
+          allowedTabs: formData.allowedTabs,
+          canWrite: formData.canWrite
+        };
+        await savePlatformUser(userRecord);
+      }
+
+      onLogAction(
+        editingUser
+          ? `👥 [USERS] Super Admin updated ${formData.fullName} (${cleanEmail}) — Role: ${formData.role}, Modules: ${formData.allowedTabs.length}, Write: ${formData.canWrite}`
+          : `👥 [USERS] Super Admin created new ${formData.role}: ${formData.fullName} (${cleanEmail}) with access to ${formData.allowedTabs.length} modules`
+      );
+      setIsModalOpen(false);
+      await loadUsers();
+    } catch (err: any) {
+      setFormNotice({
+        text: err?.message || "Failed to save user account.",
+        type: "error"
+      });
+    } finally {
+      setIsSavingUser(false);
+    }
   };
 
   // Toggle user suspension
   const handleToggleSuspend = async (user: PlatformUser) => {
     if (!hasWriteAccess) return;
+    if (isTargetSuperAdminEmail(user.email)) return;
+    if (user.role === "Admin" && !isSuperAdmin) return;
+
     const nextStatus = user.status === "Suspended" ? "Active" : "Suspended";
     const updatedUser: PlatformUser = {
       ...user,
       status: nextStatus
     };
     await savePlatformUser(updatedUser);
+    if (user.role === "Admin" && isSuperAdmin) {
+      await saveAdminOperator({
+        email: user.email,
+        fullName: user.fullName,
+        role: "Admin",
+        allowedTabs: user.allowedTabs,
+        canWrite: user.canWrite,
+        status: nextStatus === "Suspended" ? "Suspended" : "Active"
+      }).catch(() => null);
+    }
     onLogAction(`👥 [USERS] Account status toggled for ${user.fullName} to [${nextStatus}]`);
     loadUsers();
   };
 
   // Delete user
-  const handleDeleteUser = async (userId: string, name: string) => {
+  const handleDeleteUser = async (user: PlatformUser) => {
     if (!hasWriteAccess) return;
-    if (confirm(`Are you sure you want to permanently delete credentials for: ${name}?`)) {
-      await deletePlatformUser(userId);
-      onLogAction(`❌ [USERS] Revoked portal access for: ${name}`);
-      loadUsers();
+    if (isTargetSuperAdminEmail(user.email)) return;
+    if (user.role === "Admin" && !isSuperAdmin) return;
+
+    await deletePlatformUser(user.id);
+    if (user.role === "Admin" && isSuperAdmin) {
+      await deleteAdminOperator(user.email).catch(() => null);
     }
+    setDeleteConfirmId(null);
+    onLogAction(`❌ [USERS] Revoked portal access for: ${user.fullName} (${user.email})`);
+    loadUsers();
   };
 
   // Export to CSV
   const handleExportCSV = () => {
     try {
-      const headers = ["ID", "Full Name", "Email", "Phone", "Role", "Status", "Joined At", "Location", "Email Verified", "Verification Date", "Last Login"];
+      const headers = ["ID", "Full Name", "Email", "Phone", "Role", "Write Access", "Allowed Modules Count", "Status", "Joined At", "Location"];
       const rows = filteredUsers.map(u => [
         u.id,
         u.fullName,
         u.email,
         u.phone,
-        u.role,
+        isTargetSuperAdminEmail(u.email) ? "Super Admin (Owner)" : u.role,
+        isTargetSuperAdminEmail(u.email) ? "Full System Write" : (u.canWrite ? "Read & Write" : "View Only"),
+        isTargetSuperAdminEmail(u.email) ? "All 33 Modules" : `${u.allowedTabs?.length || DEFAULT_LIMITED_ADMIN_TABS.length} Modules`,
         u.status,
         u.joinedAt,
-        u.location,
-        u.emailVerified ? "Verified" : "Unverified",
-        u.verificationDate || "N/A",
-        u.lastLogin || "N/A"
+        u.location
       ]);
       
       const csvContent = "data:text/csv;charset=utf-8," 
@@ -264,7 +437,6 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
   const handleResendVerification = async (user: PlatformUser) => {
     setResendStatus({ id: user.id, success: true, message: "Sending..." });
     try {
-      // Lazy load Firebase Firestore
       const { doc, updateDoc } = await import("firebase/firestore");
       const { getFirestoreDb } = await import("../lib/db");
       const db = await getFirestoreDb();
@@ -321,6 +493,13 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
     return matchesSearch && matchesRole && matchesStatus && matchesVerify;
   });
 
+  const configurableGroups = ADMIN_MODULE_GROUPS.map((grp) => ({
+    ...grp,
+    items: grp.items.filter((it) => !it.superAdminOnly)
+  })).filter((grp) => grp.items.length > 0);
+
+  const allConfigurableTabIds = configurableGroups.flatMap((g) => g.items.map((i) => i.id));
+
   return (
     <div className="space-y-6 text-left animate-[fadeIn_0.2s_ease-out]">
       
@@ -331,10 +510,25 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
             <Users size={20} />
           </div>
           <div>
-            <h3 className="text-sm font-black uppercase text-slate-900 tracking-tight">
-              Administrative User Accounts
-            </h3>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block mt-0.5">Control, audit, and provision portal accounts (Admin, Mentor, Viewer)</span>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-black uppercase text-slate-900 tracking-tight">
+                Administrative & Platform Users
+              </h3>
+              {isSuperAdmin ? (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-black uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                  👑 Super Admin Sovereign Mode
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-black uppercase bg-slate-100 text-slate-600 border border-slate-200">
+                  🔒 Limited Admin View
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block mt-0.5">
+              {isSuperAdmin
+                ? "Create Admin users, assign their login passwords, and choose the exact modules they can see & access"
+                : "View platform users (Creating or modifying Admin accounts requires Super Admin authority)"}
+            </span>
           </div>
         </div>
 
@@ -344,16 +538,16 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
             className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 transition-all text-2xs font-extrabold uppercase tracking-widest rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer bg-white"
           >
             <Download size={12} />
-            Export to CSV
+            Export CSV
           </button>
 
-          {hasWriteAccess && (
+          {isSuperAdmin && (
             <button
               onClick={handleOpenAddModal}
               className="px-4 py-2 bg-[#103D2E] hover:bg-[#07130F] text-amber-300 hover:text-white transition-all text-2xs font-extrabold uppercase tracking-widest rounded-xl shadow-md flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
             >
               <UserPlus size={12} className="stroke-[2.5]" />
-              New User Account
+              Create New Admin / User
             </button>
           )}
         </div>
@@ -440,12 +634,12 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
           <table className="w-full text-left border-collapse font-sans">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-150 text-[9px] font-black uppercase text-slate-450 tracking-widest font-mono">
-                <th className="py-4 px-6">User / contact information</th>
-                <th className="py-4 px-6">Assigned role</th>
-                <th className="py-4 px-6">Assigned State</th>
+                <th className="py-4 px-6">User / Contact Information</th>
+                <th className="py-4 px-6">Role & Authority</th>
+                <th className="py-4 px-6">Granted Modules / Access</th>
                 <th className="py-4 px-6 text-center">Roster Status</th>
                 <th className="py-4 px-6 text-center">Email Verification</th>
-                <th className="py-4 px-6">Assigned on</th>
+                <th className="py-4 px-6">Assigned On</th>
                 {hasWriteAccess && <th className="py-4 px-6 text-right">Actions</th>}
               </tr>
             </thead>
@@ -457,151 +651,211 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
-                    {/* Bio details */}
-                    <td className="py-4 px-6">
-                      <p className="font-extrabold text-slate-900">{user.fullName}</p>
-                      <div className="text-[9.5px] text-slate-450 flex items-center gap-1.5 font-mono mt-0.5">
-                        <span className="flex items-center gap-0.5"><Mail size={9} /> {user.email}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-0.5"><Phone size={9} /> {user.phone}</span>
-                      </div>
-                    </td>
+                filteredUsers.map((user) => {
+                  const isOwner = isTargetSuperAdminEmail(user.email);
+                  const isProtectedFromCaller = (user.role === "Admin" || isOwner) && !isSuperAdmin;
+                  const grantedTabs = user.allowedTabs && user.allowedTabs.length > 0
+                    ? user.allowedTabs
+                    : DEFAULT_LIMITED_ADMIN_TABS;
 
-                    {/* Role */}
-                    <td className="py-4 px-6">
-                      <span className={`px-2.5 py-0.5 rounded border text-[8.5px] font-black uppercase tracking-wider ${
-                        user.role === "Admin" ? "bg-red-50 text-red-600 border-red-150" :
-                        user.role === "Mentor" ? "bg-amber-50 text-amber-700 border-amber-150" :
-                        user.role === "Student" ? "bg-blue-50 text-blue-800 border-blue-150" :
-                        "bg-emerald-50 text-emerald-800 border-emerald-150"
-                      }`}>
-                        {user.role}
-                      </span>
-                    </td>
+                  return (
+                    <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
+                      {/* Bio details */}
+                      <td className="py-4 px-6">
+                        <p className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                          {user.fullName}
+                          {isOwner && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono font-black uppercase">
+                              Owner
+                            </span>
+                          )}
+                        </p>
+                        <div className="text-[9.5px] text-slate-450 flex items-center gap-1.5 font-mono mt-0.5">
+                          <span className="flex items-center gap-0.5"><Mail size={9} /> {user.email}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-0.5"><MapPin size={9} /> {user.location}</span>
+                        </div>
+                      </td>
 
-                    {/* Location */}
-                    <td className="py-4 px-6 font-bold text-slate-800">
-                      <span className="flex items-center gap-1">
-                        <MapPin size={10} className="text-[#E76F51]" />
-                        {user.location}
-                      </span>
-                    </td>
-
-                    {/* Status */}
-                    <td className="py-4 px-6 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-widest ${
-                        user.status === "Active" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
-                        user.status === "Suspended" ? "bg-amber-50 text-amber-700 border border-amber-100 animate-pulse" :
-                        "bg-slate-100 text-slate-500 border border-slate-200"
-                      }`}>
-                        {user.status}
-                      </span>
-                    </td>
-
-                    {/* Email Verification */}
-                    <td className="py-4 px-6 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        {user.emailVerified ? (
-                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-150 rounded text-[8px] font-black uppercase tracking-wider">
-                            <CheckCircle size={8} /> Verified
+                      {/* Role */}
+                      <td className="py-4 px-6">
+                        {isOwner ? (
+                          <span className="px-2.5 py-1 rounded border text-[8.5px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border-amber-300 inline-flex items-center gap-1">
+                            👑 Super Admin
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-150 rounded text-[8px] font-black uppercase tracking-wider">
-                            <XCircle size={8} /> Pending
+                          <div className="space-y-1">
+                            <span className={`px-2.5 py-0.5 rounded border text-[8.5px] font-black uppercase tracking-wider inline-block ${
+                              user.role === "Admin" ? "bg-red-50 text-red-600 border-red-150" :
+                              user.role === "Mentor" ? "bg-amber-50 text-amber-700 border-amber-150" :
+                              user.role === "Student" ? "bg-blue-50 text-blue-800 border-blue-150" :
+                              "bg-emerald-50 text-emerald-800 border-emerald-150"
+                            }`}>
+                              {user.role === "Admin" ? "Limited Admin" : user.role}
+                            </span>
+                            {user.role !== "Student" && (
+                              <span className="block text-[8.5px] font-mono font-bold text-slate-500">
+                                {user.canWrite === false ? "👁️ View Only" : "✏️ Read & Write"}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Granted Modules */}
+                      <td className="py-4 px-6">
+                        {isOwner ? (
+                          <span className="text-[10px] font-mono font-extrabold text-[#103D2E] bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg inline-block">
+                            All 33 System Modules (Full Owner Access)
                           </span>
+                        ) : user.role === "Student" ? (
+                          <span className="text-[10px] font-mono text-slate-400">
+                            Public Student Portal Only
+                          </span>
+                        ) : (
+                          <div className="space-y-1 max-w-[230px]">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9.5px] font-mono font-extrabold text-[#103D2E] bg-slate-100 px-2 py-0.5 rounded">
+                                {grantedTabs.length} Modules Enabled
+                              </span>
+                              {isSuperAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditModal(user)}
+                                  className="text-[9px] font-mono font-bold text-amber-700 hover:underline cursor-pointer"
+                                >
+                                  Configure
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-[9px] text-slate-400 font-mono truncate" title={grantedTabs.join(", ")}>
+                              {grantedTabs.slice(0, 4).join(", ")}
+                              {grantedTabs.length > 4 ? ` +${grantedTabs.length - 4} more` : ""}
+                            </p>
+                          </div>
                         )}
+                      </td>
 
-                        {!user.emailVerified && hasWriteAccess && (
-                          <button
-                            onClick={() => handleResendVerification(user)}
-                            disabled={resendStatus?.id === user.id}
-                            className="p-1 hover:bg-slate-100 text-slate-500 hover:text-[#103D2E] rounded transition-colors cursor-pointer"
-                            title="Resend verification email"
-                          >
-                            <Send size={10} />
-                          </button>
-                        )}
-                      </div>
-                      {resendStatus?.id === user.id && (
-                        <p className={`text-[8px] font-bold mt-1 ${resendStatus.success ? "text-emerald-650" : "text-rose-500"}`}>
-                          {resendStatus.message}
-                        </p>
-                      )}
-                      {user.emailVerified && user.verificationDate && (
-                        <span className="block text-[8px] text-slate-400 font-mono mt-0.5 font-bold">
-                          On: {new Date(user.verificationDate).toLocaleDateString("en-NG")}
+                      {/* Status */}
+                      <td className="py-4 px-6 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-widest ${
+                          user.status === "Active" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
+                          user.status === "Suspended" ? "bg-amber-50 text-amber-700 border border-amber-100 animate-pulse" :
+                          "bg-slate-100 text-slate-500 border border-slate-200"
+                        }`}>
+                          {user.status}
                         </span>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* Joined Date / Last Login */}
-                    <td className="py-4 px-6 text-slate-500 font-mono text-[9.5px] font-bold">
-                      <div>
-                        {new Date(user.joinedAt).toLocaleDateString("en-NG", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric"
-                        })}
-                      </div>
-                      {user.lastLogin && (
-                        <div className="text-[8px] text-slate-400 mt-0.5 font-mono">
-                          Last: {new Date(user.lastLogin).toLocaleDateString("en-NG", {
+                      {/* Email Verification */}
+                      <td className="py-4 px-6 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {user.emailVerified || isOwner ? (
+                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-150 rounded text-[8px] font-black uppercase tracking-wider">
+                              <CheckCircle size={8} /> Verified
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-150 rounded text-[8px] font-black uppercase tracking-wider">
+                              <XCircle size={8} /> Pending
+                            </span>
+                          )}
+
+                          {!user.emailVerified && !isOwner && hasWriteAccess && (
+                            <button
+                              onClick={() => handleResendVerification(user)}
+                              disabled={resendStatus?.id === user.id}
+                              className="p-1 hover:bg-slate-100 text-slate-500 hover:text-[#103D2E] rounded transition-colors cursor-pointer"
+                              title="Resend verification email"
+                            >
+                              <Send size={10} />
+                            </button>
+                          )}
+                        </div>
+                        {resendStatus?.id === user.id && (
+                          <p className={`text-[8px] font-bold mt-1 ${resendStatus.success ? "text-emerald-650" : "text-rose-500"}`}>
+                            {resendStatus.message}
+                          </p>
+                        )}
+                      </td>
+
+                      {/* Joined Date */}
+                      <td className="py-4 px-6 text-slate-500 font-mono text-[9.5px] font-bold">
+                        <div>
+                          {new Date(user.joinedAt).toLocaleDateString("en-NG", {
                             year: "numeric",
                             month: "short",
                             day: "numeric"
                           })}
                         </div>
-                      )}
-                    </td>
-
-                    {/* Action panel triggers */}
-                    {hasWriteAccess && (
-                      <td className="py-4 px-6 text-right">
-                        <div className="inline-flex gap-2">
-                          <button
-                            onClick={() => handleToggleSuspend(user)}
-                            className={`p-1.5 rounded-lg border text-2xs font-extrabold cursor-pointer transition-all ${
-                              user.status === "Suspended"
-                                ? "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100"
-                                : "bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100"
-                            }`}
-                            title={user.status === "Suspended" ? "Enable Account" : "Disable Account"}
-                          >
-                            {user.status === "Suspended" ? <UserCheck size={12} /> : <UserMinus size={12} />}
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenEditModal(user)}
-                            className="p-1.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg cursor-pointer transition-all"
-                            title="Edit user info"
-                          >
-                            <Edit size={12} />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteUser(user.id, user.fullName)}
-                            className="p-1.5 bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-all"
-                            title="Delete user account"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
                       </td>
-                    )}
-                  </tr>
-                ))
+
+                      {/* Action panel triggers */}
+                      {hasWriteAccess && (
+                        <td className="py-4 px-6 text-right">
+                          {isOwner ? (
+                            <span className="text-[9px] font-mono font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                              Protected Owner
+                            </span>
+                          ) : isProtectedFromCaller ? (
+                            <span className="text-[9px] font-mono font-bold text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                              Super Admin Only
+                            </span>
+                          ) : (
+                            <div className="inline-flex items-center gap-2">
+                              <button
+                                onClick={() => handleToggleSuspend(user)}
+                                className={`p-1.5 rounded-lg border text-2xs font-extrabold cursor-pointer transition-all ${
+                                  user.status === "Suspended"
+                                    ? "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100"
+                                    : "bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100"
+                                }`}
+                                title={user.status === "Suspended" ? "Enable Account" : "Suspend Account"}
+                              >
+                                {user.status === "Suspended" ? <UserCheck size={12} /> : <UserMinus size={12} />}
+                              </button>
+
+                              <button
+                                onClick={() => handleOpenEditModal(user)}
+                                className="px-2.5 py-1.5 bg-[#103D2E]/10 border border-[#103D2E]/20 hover:bg-[#103D2E] hover:text-amber-300 text-[#103D2E] rounded-lg cursor-pointer transition-all flex items-center gap-1 text-[10px] font-extrabold"
+                                title="Configure Access & Edit User"
+                              >
+                                <Edit size={11} />
+                                <span>Access</span>
+                              </button>
+
+                              {deleteConfirmId === user.id ? (
+                                <button
+                                  onClick={() => handleDeleteUser(user)}
+                                  className="px-2 py-1 bg-rose-600 text-white rounded-lg text-[9px] font-black uppercase cursor-pointer"
+                                >
+                                  Confirm
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setDeleteConfirmId(user.id)}
+                                  className="p-1.5 bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-all"
+                                  title="Delete user account"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Modal Add / Edit Form */}
+      {/* Modal Add / Edit Form with Granular Module Access Picker */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#000]/40 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-md bg-white rounded-[2rem] border border-slate-200 p-6 sm:p-8 shadow-2xl relative text-left">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#000]/50 backdrop-blur-xs font-sans overflow-y-auto">
+          <div className="w-full max-w-2xl bg-white rounded-[2rem] border border-slate-200 p-6 sm:p-8 shadow-2xl relative text-left my-8 max-h-[92vh] overflow-y-auto">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute top-6 right-6 p-1.5 text-slate-400 hover:text-slate-700 bg-slate-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
@@ -609,100 +863,251 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
               <X size={14} />
             </button>
 
-            <h3 className="text-sm font-black uppercase text-slate-950 border-b border-slate-100 pb-2.5 mb-4">
-              {editingUser ? "Edit User Record" : "Register New Account"}
-            </h3>
+            <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3 mb-5">
+              <div className="w-9 h-9 rounded-xl bg-[#103D2E] text-amber-300 flex items-center justify-center">
+                <ShieldCheck size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm font-black uppercase text-slate-950">
+                  {editingUser ? `Configure Access & Profile: ${editingUser.fullName}` : "Create New Admin & Assign Access"}
+                </h3>
+                <p className="text-[10px] font-mono text-slate-500">
+                  As System Owner (Super Admin), choose exactly what this Admin can see and do.
+                </p>
+              </div>
+            </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              
-              {/* Name */}
-              <div className="space-y-1">
-                <label className="block text-[8.5px] uppercase tracking-wider font-mono font-black text-slate-400">Full Name:</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.fullName}
-                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                  placeholder="e.g. Victor Chigozie"
-                  className="w-full p-2.5 border border-slate-250 focus:border-[#103D2E] rounded-lg text-xs outline-none bg-slate-50/50 hover:bg-slate-50 text-slate-850 font-bold"
-                />
+            {formNotice && (
+              <div className={`mb-4 p-3 rounded-xl border text-xs font-bold ${
+                formNotice.type === "error"
+                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                  : "bg-emerald-50 text-emerald-800 border-emerald-200"
+              }`}>
+                {formNotice.text}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Name */}
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase tracking-wider font-mono font-black text-slate-500">Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.fullName}
+                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                    placeholder="e.g. Victor Chigozie"
+                    className="w-full p-2.5 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-slate-50/50 text-slate-800 font-bold"
+                  />
+                </div>
+
+                {/* Email */}
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase tracking-wider font-mono font-black text-slate-500">Admin Login Email *</label>
+                  <input
+                    type="email"
+                    required
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="e.g. victor.ch@gmail.com"
+                    className="w-full p-2.5 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-slate-50/50 text-slate-800 font-bold font-mono"
+                  />
+                </div>
+
+                {/* Phone */}
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase tracking-wider font-mono font-black text-slate-500">Phone Number *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="e.g. +234 813 456 7890"
+                    className="w-full p-2.5 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-slate-50/50 text-slate-800 font-bold"
+                  />
+                </div>
+
+                {/* Location */}
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase tracking-wider font-mono font-black text-slate-500">State / Chapter *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    placeholder="e.g. Lagos State"
+                    className="w-full p-2.5 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-slate-50/50 text-slate-800 font-bold"
+                  />
+                </div>
               </div>
 
-              {/* Email */}
-              <div className="space-y-1">
-                <label className="block text-[8.5px] uppercase tracking-wider font-mono font-black text-slate-400">Email Address:</label>
-                <input
-                  type="email"
-                  required
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="e.g. victor.ch@gmail.com"
-                  className="w-full p-2.5 border border-slate-250 focus:border-[#103D2E] rounded-lg text-xs outline-none bg-slate-50/50 hover:bg-slate-50 text-slate-850 font-bold"
-                />
-              </div>
-
-              {/* Phone */}
-              <div className="space-y-1">
-                <label className="block text-[8.5px] uppercase tracking-wider font-mono font-black text-slate-400">Phone Connection:</label>
-                <input
-                  type="tel"
-                  required
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="e.g. +234 813 456 7890"
-                  className="w-full p-2.5 border border-slate-250 focus:border-[#103D2E] rounded-lg text-xs outline-none bg-slate-50/50 hover:bg-slate-50 text-slate-850 font-bold"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* Role */}
                 <div className="space-y-1">
-                  <label className="block text-[8.5px] uppercase tracking-wider font-mono font-black text-slate-400">Roster Role:</label>
+                  <label className="block text-[9px] uppercase tracking-wider font-mono font-black text-slate-500">Assigned Role *</label>
                   <select
                     value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value as PlatformUser["role"] })}
-                    className="w-full p-2.5 border border-slate-250 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-slate-50/50 text-slate-700 font-bold"
+                    onChange={(e) => {
+                      const nextRole = e.target.value as PlatformUser["role"];
+                      setFormData({
+                        ...formData,
+                        role: nextRole,
+                        canWrite: nextRole === "Admin"
+                      });
+                    }}
+                    className="w-full p-2.5 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-slate-50/50 text-slate-800 font-bold"
                   >
-                    <option value="Admin">Admin</option>
-                    <option value="Mentor">Mentor</option>
-                    <option value="Viewer">Viewer</option>
-                    <option value="Student">Student</option>
+                    {isSuperAdmin && <option value="Admin">Admin (Limited Access)</option>}
+                    <option value="Mentor">Mentor (Scoped)</option>
+                    <option value="Viewer">Viewer (Read-Only)</option>
+                    <option value="Student">Student (Public)</option>
                   </select>
                 </div>
 
                 {/* Status */}
                 <div className="space-y-1">
-                  <label className="block text-[8.5px] uppercase tracking-wider font-mono font-black text-slate-400">Security Access:</label>
+                  <label className="block text-[9px] uppercase tracking-wider font-mono font-black text-slate-500">Account Status *</label>
                   <select
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as PlatformUser["status"] })}
-                    className="w-full p-2.5 border border-slate-250 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-slate-50/50 text-slate-700 font-bold"
+                    className="w-full p-2.5 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-slate-50/50 text-slate-800 font-bold"
                   >
                     <option value="Active">Active</option>
                     <option value="Suspended">Suspended</option>
                     <option value="Deactivated">Deactivated</option>
                   </select>
                 </div>
+
+                {/* Password */}
+                {isSuperAdmin && formData.role !== "Student" && (
+                  <div className="space-y-1">
+                    <label className="block text-[9px] uppercase tracking-wider font-mono font-black text-slate-500">
+                      {editingUser ? "Reset Password (Optional)" : "Admin Login Password *"}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required={!editingUser && formData.role === "Admin"}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        placeholder={editingUser ? "Leave blank to keep current" : "Min 8 characters"}
+                        className="w-full p-2.5 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-amber-50/40 text-slate-900 font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Location */}
-              <div className="space-y-1">
-                <label className="block text-[8.5px] uppercase tracking-wider font-mono font-black text-slate-400">State Location:</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  placeholder="e.g. Kwara State"
-                  className="w-full p-2.5 border border-slate-250 focus:border-[#103D2E] rounded-lg text-xs outline-none bg-slate-50/50 hover:bg-slate-50 text-slate-850 font-bold"
-                />
-              </div>
+              {/* Granular Access Control Matrix (For Admin / Mentor / Viewer) */}
+              {isSuperAdmin && formData.role !== "Student" && (
+                <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                    <div>
+                      <h4 className="text-xs font-black uppercase text-[#103D2E] flex items-center gap-1.5">
+                        <Lock size={13} />
+                        Select Allowed Dashboard Modules ({formData.allowedTabs.length} Selected)
+                      </h4>
+                      <p className="text-[10px] text-slate-500">
+                        This Admin will ONLY see and access the tabs you check below. System Owner tabs are never shared.
+                      </p>
+                    </div>
+
+                    {/* Write Permission Toggle */}
+                    <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-slate-200 cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={formData.canWrite}
+                        onChange={(e) => setFormData({ ...formData, canWrite: e.target.checked })}
+                        className="rounded text-[#103D2E] focus:ring-[#103D2E]"
+                      />
+                      <span className="text-[10px] font-mono font-black uppercase text-slate-800">
+                        {formData.canWrite ? "✏️ Can Edit Records" : "👁️ Read-Only"}
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Quick Role Presets */}
+                  <div className="space-y-1.5">
+                    <span className="block text-[9px] font-mono font-black uppercase text-slate-400 tracking-wider">
+                      Quick Access Templates (1-Click):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {ADMIN_ACCESS_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => applyPreset(preset.tabs, preset.canWrite)}
+                          className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#103D2E] text-slate-700 hover:text-amber-300 border border-slate-200 text-[9.5px] font-bold transition-all cursor-pointer"
+                          title={preset.description}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setFormData((prev) => ({ ...prev, allowedTabs: [...allConfigurableTabIds] }))}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[9.5px] font-bold transition-all cursor-pointer"
+                      >
+                        Select All Operational
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData((prev) => ({ ...prev, allowedTabs: ["dashboard"] }))}
+                        className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[9.5px] font-bold transition-all cursor-pointer"
+                      >
+                        Dashboard Only
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Checkboxes by Category */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">
+                    {configurableGroups.map((grp) => (
+                      <div key={grp.title} className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-2">
+                        <span className="block text-[9px] font-mono font-black uppercase text-slate-400 tracking-wider border-b border-slate-100 pb-1">
+                          {grp.title}
+                        </span>
+                        <div className="space-y-1.5">
+                          {grp.items.map((item) => {
+                            const checked = formData.allowedTabs.includes(item.id);
+                            return (
+                              <label
+                                key={item.id}
+                                className={`flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer text-[11px] font-semibold transition-colors ${
+                                  checked ? "bg-emerald-50/80 text-[#103D2E] font-bold" : "text-slate-600 hover:bg-slate-50"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleAllowedTab(item.id)}
+                                  className="rounded border-slate-300 text-[#103D2E] focus:ring-[#103D2E] w-3.5 h-3.5"
+                                />
+                                <span className="truncate">{item.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"
-                className="w-full py-3 bg-[#103D2E] hover:bg-[#07130F] text-amber-300 hover:text-white transition-all text-xs font-black uppercase tracking-widest rounded-xl shadow-md cursor-pointer mt-2"
+                disabled={isSavingUser}
+                className="w-full py-3 bg-[#103D2E] hover:bg-[#07130F] text-amber-300 hover:text-white transition-all text-xs font-black uppercase tracking-widest rounded-xl shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {editingUser ? "Save Roster Entry Changes" : "Register Admin User Account"}
+                <Check size={14} />
+                <span>
+                  {isSavingUser
+                    ? "Provisioning Access..."
+                    : editingUser
+                    ? "Save Access Permissions & User Profile"
+                    : "Create Admin User & Grant Selected Access"}
+                </span>
               </button>
 
             </form>
@@ -713,3 +1118,4 @@ export default function AdminUserManagement({ hasWriteAccess, onLogAction }: Adm
     </div>
   );
 }
+

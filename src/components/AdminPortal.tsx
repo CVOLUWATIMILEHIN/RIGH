@@ -56,14 +56,27 @@ import {
   verifySaltedAdminDigest,
   createClientSignedSession,
   getFirebaseConfig,
-  getFirebaseConfigInfo
+  getFirebaseConfigInfo,
+  getAdminOperators,
+  saveAdminOperator,
+  deleteAdminOperator,
+  authenticateOperatorAccount,
+  AdminOperatorRecord,
+  ANCHOR_SUPER_ADMIN_EMAILS
 } from "../lib/db";
 
 import AdminTerminal from "./AdminTerminal";
 import AdminAnalytics from "./AdminAnalytics";
 import AdminCandidateDrawer from "./AdminCandidateDrawer";
 import CheckInModal from "./CheckInModal";
-import AdminSidebar, { AdminTabType } from "./AdminSidebar";
+import AdminSidebar, {
+  AdminTabType,
+  ADMIN_MODULE_GROUPS,
+  ALL_ADMIN_MODULES,
+  SUPER_ADMIN_ONLY_TABS,
+  DEFAULT_LIMITED_ADMIN_TABS,
+  ADMIN_ACCESS_PRESETS
+} from "./AdminSidebar";
 import AdminHeader from "./AdminHeader";
 import DashboardOverview from "./DashboardOverview";
 import DatatableView from "./DatatableView";
@@ -205,7 +218,10 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
   // Onboarding security roles inputs
   interface AdminUser {
     username: string;
+    fullName?: string;
     role: "Super Admin" | "Admin" | "Viewer (Read Only)" | "Editor" | "Viewer";
+    allowedTabs?: AdminTabType[];
+    canWrite?: boolean;
     token?: string;
     expiresAt?: number;
   }
@@ -249,6 +265,21 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             setCurrentAdminUser(null);
             localStorage.removeItem("rma_current_logged_in_user");
             window.dispatchEvent(new Event("rma_admin_session_changed"));
+          }
+        } else if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (data?.valid && data?.user) {
+            setCurrentAdminUser((prev) => {
+              if (!prev) return prev;
+              const updated: AdminUser = {
+                ...prev,
+                role: data.user.role || prev.role,
+                allowedTabs: Array.isArray(data.user.allowedTabs) ? data.user.allowedTabs : prev.allowedTabs,
+                canWrite: typeof data.user.canWrite === "boolean" ? data.user.canWrite : prev.canWrite
+              };
+              localStorage.setItem("rma_current_logged_in_user", JSON.stringify(updated));
+              return updated;
+            });
           }
         }
       })
@@ -326,9 +357,14 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
     return () => clearInterval(interval);
   }, [lockoutUntil]);
 
-  // Register New Admin Form
+  // Register New Admin & Access Control State (Super Admin Only)
+  const [newAdminName, setNewAdminName] = useState("");
   const [newAdminEmail, setNewAdminEmail] = useState("");
   const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [newAdminCanWrite, setNewAdminCanWrite] = useState(true);
+  const [newAdminAllowedTabs, setNewAdminAllowedTabs] = useState<AdminTabType[]>([...DEFAULT_LIMITED_ADMIN_TABS]);
+  const [editingOperatorEmail, setEditingOperatorEmail] = useState<string | null>(null);
+  const [adminOperatorsList, setAdminOperatorsList] = useState<AdminOperatorRecord[]>([]);
   const [isRegisteringAdmin, setIsRegisteringAdmin] = useState(false);
   const [adminRegisterError, setAdminRegisterError] = useState("");
   const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
@@ -377,14 +413,86 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
   const isUnlocked = !!currentAdminUser;
   const currentEmail = currentAdminUser?.username || "";
   const userRole = currentAdminUser?.role || "Viewer (Read Only)";
-  const isSuperAdmin = userRole === "Super Admin";
-  const hasWriteAccess = userRole === "Super Admin" || userRole === "Admin";
-  const hasContentWriteAccess = userRole === "Super Admin" || userRole === "Admin" || userRole === "Editor";
+  const isSuperAdmin =
+    userRole === "Super Admin" ||
+    ANCHOR_SUPER_ADMIN_EMAILS.includes(currentEmail.toLowerCase().trim());
+
+  const hasWriteAccess = isSuperAdmin
+    ? true
+    : (userRole === "Admin" || userRole === "Editor") && (currentAdminUser?.canWrite !== false);
+
+  const hasContentWriteAccess = isSuperAdmin
+    ? true
+    : (userRole === "Admin" || userRole === "Editor") && (currentAdminUser?.canWrite !== false);
+
+  const effectiveAllowedTabs: AdminTabType[] = isSuperAdmin
+    ? ALL_ADMIN_MODULES.map((m) => m.id)
+    : ((currentAdminUser?.allowedTabs && currentAdminUser.allowedTabs.length > 0
+        ? currentAdminUser.allowedTabs
+        : DEFAULT_LIMITED_ADMIN_TABS
+      ).filter((tabId) => !SUPER_ADMIN_ONLY_TABS.includes(tabId as AdminTabType)) as AdminTabType[]);
+
+  // Sync Admin Operators Directory and live-refresh limited admin permissions
+  const refreshAdminOperatorsDirectory = async () => {
+    try {
+      const ops = await getAdminOperators();
+      setAdminOperatorsList(ops);
+
+      if (currentAdminUser && !ANCHOR_SUPER_ADMIN_EMAILS.includes(currentAdminUser.username.toLowerCase())) {
+        const myRecord = ops.find(
+          (o) => o.email.toLowerCase() === currentAdminUser.username.toLowerCase()
+        );
+        if (myRecord) {
+          if (myRecord.status === "Suspended") {
+            setCurrentAdminUser(null);
+            localStorage.removeItem("rma_current_logged_in_user");
+            showFeedback("Your administrator account has been suspended by the Super Admin.", "error");
+            return;
+          }
+          const nextTabs = (myRecord.allowedTabs || DEFAULT_LIMITED_ADMIN_TABS) as AdminTabType[];
+          const nextWrite = typeof myRecord.canWrite === "boolean" ? myRecord.canWrite : true;
+          const prevTabsKey = (currentAdminUser.allowedTabs || []).join(",");
+          const nextTabsKey = nextTabs.join(",");
+          if (prevTabsKey !== nextTabsKey || currentAdminUser.canWrite !== nextWrite) {
+            const updated: AdminUser = {
+              ...currentAdminUser,
+              fullName: myRecord.fullName || currentAdminUser.fullName,
+              allowedTabs: nextTabs,
+              canWrite: nextWrite
+            };
+            setCurrentAdminUser(updated);
+            localStorage.setItem("rma_current_logged_in_user", JSON.stringify(updated));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed refreshing operators list:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (!isUnlocked) return;
+    refreshAdminOperatorsDirectory();
+    const handleOpsUpdated = () => refreshAdminOperatorsDirectory();
+    window.addEventListener("rma_admin_operators_updated", handleOpsUpdated);
+    return () => window.removeEventListener("rma_admin_operators_updated", handleOpsUpdated);
+  }, [isUnlocked, activeTab]);
+
+  // Enforce module restrictions so non-Super Admins cannot stay on unauthorized tabs
+  useEffect(() => {
+    if (!isUnlocked || isSuperAdmin) return;
+    if (!effectiveAllowedTabs.includes(activeTab)) {
+      const fallbackTab = effectiveAllowedTabs[0] || "dashboard";
+      if (activeTab !== fallbackTab) {
+        setActiveTab(fallbackTab);
+      }
+    }
+  }, [isUnlocked, isSuperAdmin, activeTab, effectiveAllowedTabs.join(",")]);
 
   const checkWritePermission = (): boolean => {
     if (!hasWriteAccess) {
-      showFeedback(`Access Denied: Only Admin or Super Admin accounts can modify records. Current: [${userRole}]`, "error");
-      addTerminalLog(`⚠️ [REJECTED] Unauthorized write attempt blocked for user "${currentEmail}" [${userRole}].`);
+      showFeedback(`Access Denied: Your account has Read-Only permissions. Contact the Super Admin to request edit access.`, "error");
+      addTerminalLog(`⚠️ [REJECTED] Write attempt blocked for read-only operator "${currentEmail}" [${userRole}].`);
       return false;
     }
     return true;
@@ -430,7 +538,15 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
 
     try {
       // 1. PRIMARY SERVER-SIDE CRYPTOGRAPHIC AUTHENTICATION (scrypt + HMAC-SHA256 token)
-      let serverSession: { email: string; role: any; token: string; expiresAt: number } | null = null;
+      let serverSession: {
+        email: string;
+        fullName?: string;
+        role: any;
+        allowedTabs?: AdminTabType[];
+        canWrite?: boolean;
+        token: string;
+        expiresAt: number;
+      } | null = null;
       let serverLockoutSeconds = 0;
       let serverErrorMsg = "";
 
@@ -445,11 +561,20 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         const resolvedEmail = serverData?.email || serverData?.user?.username || cleanEmail;
         const resolvedRoleFromServer = serverData?.role || serverData?.user?.role || (isSuperAdminEmail ? "Super Admin" : "Admin");
         const resolvedExpires = serverData?.expiresAt || serverData?.user?.expiresAt || (Date.now() + 12 * 60 * 60 * 1000);
+        const resolvedTabs = serverData?.allowedTabs || serverData?.user?.allowedTabs;
+        const resolvedWrite = typeof serverData?.canWrite === "boolean"
+          ? serverData.canWrite
+          : typeof serverData?.user?.canWrite === "boolean"
+          ? serverData.user.canWrite
+          : true;
 
         if (serverRes.ok && serverData?.success && resolvedToken) {
           serverSession = {
             email: resolvedEmail,
+            fullName: serverData?.fullName || serverData?.user?.fullName,
             role: resolvedRoleFromServer,
+            allowedTabs: Array.isArray(resolvedTabs) ? resolvedTabs : undefined,
+            canWrite: resolvedWrite,
             token: resolvedToken,
             expiresAt: resolvedExpires
           };
@@ -463,7 +588,34 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         console.warn("Server authentication request error:", srvErr);
       }
 
-      if (!serverSession && (await verifySaltedAdminDigest(cleanPass))) {
+      // 1B. Check Operator Accounts created by Super Admin (Firestore + Local Storage + Master Key)
+      if (!serverSession) {
+        const operatorAuth = await authenticateOperatorAccount(cleanEmail, cleanPass);
+        if (operatorAuth.authenticated && operatorAuth.operator) {
+          const op = operatorAuth.operator;
+          const clientSigned = await createClientSignedSession(
+            op.email,
+            op.role,
+            op.allowedTabs,
+            op.canWrite
+          );
+          serverSession = {
+            email: op.email,
+            fullName: op.fullName,
+            role: op.role,
+            allowedTabs: (op.allowedTabs as AdminTabType[]) || undefined,
+            canWrite: op.canWrite !== false,
+            token: clientSigned.token,
+            expiresAt: clientSigned.expiresAt
+          };
+          serverLockoutSeconds = 0;
+          serverErrorMsg = "";
+        } else if (operatorAuth.error && operatorAuth.error.includes("suspended")) {
+          throw new Error(operatorAuth.error);
+        }
+      }
+
+      if (!serverSession && isSuperAdminEmail && (await verifySaltedAdminDigest(cleanPass))) {
         serverSession = await createClientSignedSession(cleanEmail, "Super Admin");
         serverLockoutSeconds = 0;
         serverErrorMsg = "";
@@ -553,8 +705,12 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         }
       }
 
-      // Determine final active user role
+      // Determine final active user role & scoped permissions
       let resolvedRole: "Super Admin" | "Admin" | "Viewer (Read Only)" | "Public User" | "Editor" | "Viewer" = "Public User";
+      let resolvedAllowedTabs: AdminTabType[] | undefined = serverSession?.allowedTabs;
+      let resolvedCanWrite: boolean = serverSession?.canWrite ?? true;
+      let resolvedFullName: string | undefined = serverSession?.fullName;
+
       if (serverSession) {
         resolvedRole = serverSession.role;
       } else if (supabaseUser) {
@@ -569,13 +725,32 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             const docRef = doc(db, "admins", cleanEmail);
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
-              return (docSnap.data().role || "Viewer (Read Only)") as any;
+              const data = docSnap.data();
+              return {
+                role: (data.role || "Viewer (Read Only)") as any,
+                allowedTabs: Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined,
+                canWrite: typeof data.canWrite === "boolean" ? data.canWrite : true,
+                fullName: data.fullName,
+                status: data.status
+              };
             }
-            return isSuperAdminEmail ? "Super Admin" : ("Public User" as any);
+            return {
+              role: isSuperAdminEmail ? "Super Admin" : ("Public User" as any)
+            };
           };
-          const fetchTimeout = new Promise<any>((resolve) => setTimeout(() => resolve(isSuperAdminEmail ? "Super Admin" : "Public User"), 2500));
-          resolvedRole = await Promise.race([fetchRolePromise(), fetchTimeout]);
-        } catch (dbErr) {
+          const fetchTimeout = new Promise<any>((resolve) =>
+            setTimeout(() => resolve({ role: isSuperAdminEmail ? "Super Admin" : "Public User" }), 2500)
+          );
+          const roleData = await Promise.race([fetchRolePromise(), fetchTimeout]);
+          if (roleData?.status === "Suspended") {
+            throw new Error("This administrator account has been suspended by the Super Admin.");
+          }
+          resolvedRole = roleData?.role || "Public User";
+          resolvedAllowedTabs = roleData?.allowedTabs;
+          resolvedCanWrite = typeof roleData?.canWrite === "boolean" ? roleData.canWrite : true;
+          resolvedFullName = roleData?.fullName;
+        } catch (dbErr: any) {
+          if (dbErr?.message?.includes("suspended")) throw dbErr;
           resolvedRole = isSuperAdminEmail ? "Super Admin" : "Public User";
         }
       }
@@ -593,7 +768,9 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             body: JSON.stringify({
               email: cleanEmail,
               uid: userCredential?.user?.uid || supabaseUser?.id || "verified-auth",
-              role: resolvedRole
+              role: resolvedRole,
+              allowedTabs: resolvedAllowedTabs,
+              canWrite: resolvedCanWrite
             })
           });
           const exchangeData = await exchangeRes.json().catch(() => ({}));
@@ -603,7 +780,10 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
           if (exchangeRes.ok && exToken) {
             serverSession = {
               email: cleanEmail,
+              fullName: resolvedFullName,
               role: exRole,
+              allowedTabs: exchangeData?.allowedTabs || resolvedAllowedTabs,
+              canWrite: typeof exchangeData?.canWrite === "boolean" ? exchangeData.canWrite : resolvedCanWrite,
               token: exToken,
               expiresAt: exExpires
             };
@@ -611,7 +791,12 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         } catch {}
 
         if (!serverSession) {
-          serverSession = await createClientSignedSession(cleanEmail, resolvedRole as any);
+          serverSession = await createClientSignedSession(
+            cleanEmail,
+            resolvedRole as any,
+            resolvedAllowedTabs,
+            resolvedCanWrite
+          );
         }
       }
 
@@ -626,7 +811,10 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
 
       const matchedUser: AdminUser = {
         username: serverSession.email || cleanEmail,
+        fullName: serverSession.fullName || resolvedFullName,
         role: resolvedRole,
+        allowedTabs: serverSession.allowedTabs || resolvedAllowedTabs,
+        canWrite: typeof serverSession.canWrite === "boolean" ? serverSession.canWrite : resolvedCanWrite,
         token: serverSession.token,
         expiresAt: serverSession.expiresAt
       };
@@ -648,7 +836,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         localStorage.setItem("rma_backend_access_logs", JSON.stringify(updatedLogs));
       }
 
-      showFeedback(`Welcome back, ${matchedUser.username}!`, "success");
+      showFeedback(`Welcome back, ${matchedUser.fullName || matchedUser.username}!`, "success");
       addTerminalLog(`🛡️ [SECURITY] Portal unlocked via Cryptographic Session. Operator: ${matchedUser.username} [${resolvedRole}].`);
 
       saveAuditLog({
@@ -761,27 +949,60 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       const isSuperAdminEmail = anchorSuperAdmins.includes(cleanEmail);
 
       let resolvedRole: "Super Admin" | "Admin" | "Viewer (Read Only)" | "Editor" | "Viewer" | "Public User" = "Public User";
+      let resolvedAllowedTabs: AdminTabType[] | undefined = undefined;
+      let resolvedCanWrite: boolean = true;
+
       if (isSuperAdminEmail) {
         resolvedRole = "Super Admin";
       } else {
         try {
-          const fetchRole = async () => {
-            const { doc, getDoc } = await import("firebase/firestore");
-            const db = await getFirestoreDb();
-            const adminDocRef = doc(db, "admins", cleanEmail);
-            const adminSnap = await getDoc(adminDocRef);
-            if (adminSnap.exists()) {
-              const adminRole = adminSnap.data().role;
-              if (adminRole === "Super Admin") return "Super Admin";
-              if (adminRole === "Admin") return "Admin";
-              if (adminRole === "Editor") return "Editor";
-              if (adminRole === "Viewer" || adminRole === "Viewer (Read Only)") return "Viewer (Read Only)";
+          const ops = await getAdminOperators();
+          const localOp = ops.find((o) => o.email.toLowerCase() === cleanEmail);
+          if (localOp) {
+            if (localOp.status === "Suspended") {
+              throw new Error("This administrator account has been suspended by the Super Admin.");
             }
-            return "Public User";
-          };
-          const timeoutRole = new Promise<any>((resolve) => setTimeout(() => resolve("Public User"), 3000));
-          resolvedRole = await Promise.race([fetchRole(), timeoutRole]);
-        } catch (dbErr) {
+            resolvedRole = localOp.role === "Super Admin" ? "Super Admin" : "Admin";
+            resolvedAllowedTabs = (localOp.allowedTabs as AdminTabType[]) || DEFAULT_LIMITED_ADMIN_TABS;
+            resolvedCanWrite = localOp.canWrite !== false;
+          } else {
+            const fetchRole = async () => {
+              const { doc, getDoc } = await import("firebase/firestore");
+              const db = await getFirestoreDb();
+              const adminDocRef = doc(db, "admins", cleanEmail);
+              const adminSnap = await getDoc(adminDocRef);
+              if (adminSnap.exists()) {
+                const data = adminSnap.data();
+                const adminRole = data.role;
+                return {
+                  role:
+                    adminRole === "Super Admin"
+                      ? "Super Admin"
+                      : adminRole === "Admin"
+                      ? "Admin"
+                      : adminRole === "Editor"
+                      ? "Editor"
+                      : adminRole === "Viewer" || adminRole === "Viewer (Read Only)"
+                      ? "Viewer (Read Only)"
+                      : "Public User",
+                  allowedTabs: Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined,
+                  canWrite: typeof data.canWrite === "boolean" ? data.canWrite : true,
+                  status: data.status
+                };
+              }
+              return { role: "Public User" };
+            };
+            const timeoutRole = new Promise<any>((resolve) => setTimeout(() => resolve({ role: "Public User" }), 3000));
+            const roleInfo = await Promise.race([fetchRole(), timeoutRole]);
+            if (roleInfo?.status === "Suspended") {
+              throw new Error("This administrator account has been suspended by the Super Admin.");
+            }
+            resolvedRole = roleInfo?.role || "Public User";
+            resolvedAllowedTabs = roleInfo?.allowedTabs;
+            resolvedCanWrite = typeof roleInfo?.canWrite === "boolean" ? roleInfo.canWrite : true;
+          }
+        } catch (dbErr: any) {
+          if (dbErr?.message?.includes("suspended")) throw dbErr;
           console.warn("Failed checking admin existence in db:", dbErr);
           resolvedRole = "Public User";
         }
@@ -830,7 +1051,14 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         return;
       }
 
-      let googleSession: { email: string; role: any; token: string; expiresAt: number } | null = null;
+      let googleSession: {
+        email: string;
+        role: any;
+        allowedTabs?: AdminTabType[];
+        canWrite?: boolean;
+        token: string;
+        expiresAt: number;
+      } | null = null;
       try {
         const exchangeRes = await fetch("/api/admin/exchange-oauth-session", {
           method: "POST",
@@ -838,7 +1066,9 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
           body: JSON.stringify({
             email: cleanEmail,
             uid: user.uid,
-            role: resolvedRole
+            role: resolvedRole,
+            allowedTabs: resolvedAllowedTabs,
+            canWrite: resolvedCanWrite
           })
         });
         const exchangeData = await exchangeRes.json().catch(() => ({}));
@@ -849,6 +1079,8 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
           googleSession = {
             email: cleanEmail,
             role: googleRole,
+            allowedTabs: exchangeData?.allowedTabs || resolvedAllowedTabs,
+            canWrite: typeof exchangeData?.canWrite === "boolean" ? exchangeData.canWrite : resolvedCanWrite,
             token: googleToken,
             expiresAt: googleExpires
           };
@@ -856,12 +1088,20 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       } catch {}
 
       if (!googleSession) {
-        googleSession = await createClientSignedSession(cleanEmail, resolvedRole as any);
+        googleSession = await createClientSignedSession(
+          cleanEmail,
+          resolvedRole as any,
+          resolvedAllowedTabs,
+          resolvedCanWrite
+        );
       }
 
       const matchedUser: AdminUser = {
         username: cleanEmail,
+        fullName: user.displayName || undefined,
         role: googleSession.role,
+        allowedTabs: googleSession.allowedTabs || resolvedAllowedTabs,
+        canWrite: typeof googleSession.canWrite === "boolean" ? googleSession.canWrite : resolvedCanWrite,
         token: googleSession.token,
         expiresAt: googleSession.expiresAt
       };
@@ -1021,62 +1261,104 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
 
   const handleRegisterAdminSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSuperAdmin) {
+      setAdminRegisterError("Only the Super Admin (System Owner) can create or modify Admin accounts.");
+      return;
+    }
+
     const cleanEmail = newAdminEmail.trim().toLowerCase();
     const password = newAdminPassword.trim();
-    if (!cleanEmail || !password) {
-      setAdminRegisterError("Please enter both email and password.");
+    const cleanName = newAdminName.trim() || cleanEmail.split("@")[0];
+
+    if (!cleanEmail) {
+      setAdminRegisterError("Please enter the administrator's email address.");
       return;
     }
-    const val = validateStrongPassword(password);
-    if (!val.isValid) {
-      setAdminRegisterError(val.error || "Weak password. Requires 8+ chars, uppercase, lowercase, number, and special character.");
+
+    if (!editingOperatorEmail && !password) {
+      setAdminRegisterError("Please set an initial login password for this administrator.");
       return;
     }
-    if (!hasWriteAccess) {
-      setAdminRegisterError("Only Administrators with write privileges can register new administrators.");
+
+    if (password && password.length < 6) {
+      setAdminRegisterError("Password must be at least 6 characters long.");
+      return;
+    }
+
+    const sanitizedTabs = newAdminAllowedTabs.filter(
+      (t) => !SUPER_ADMIN_ONLY_TABS.includes(t)
+    );
+    if (sanitizedTabs.length === 0) {
+      setAdminRegisterError("Please select at least 1 module tab for this administrator to access.");
       return;
     }
 
     setIsRegisteringAdmin(true);
     setAdminRegisterError("");
     try {
-      await registerFallbackAdmin(cleanEmail, password, "Admin");
+      await saveAdminOperator({
+        email: cleanEmail,
+        fullName: cleanName,
+        password: password || undefined,
+        role: "Admin",
+        allowedTabs: sanitizedTabs,
+        canWrite: newAdminCanWrite,
+        status: "Active",
+        createdBy: currentEmail
+      });
 
-      try {
-        const { initializeApp, deleteApp } = await import("firebase/app");
-        const { getAuth, createUserWithEmailAndPassword, signOut: fbSignOut } = await import("firebase/auth");
-        const firebaseConfig = await getFirebaseConfig();
-
-        let tempApp;
+      if (password) {
         try {
-          tempApp = initializeApp(firebaseConfig, "RMATempAdminRegisterApp");
-        } catch (err) {
-          const { getApps } = await import("firebase/app");
-          const apps = getApps();
-          tempApp = apps.find(app => app.name === "RMATempAdminRegisterApp") || initializeApp(firebaseConfig, "RMATempAdminRegisterApp");
-        }
+          const { initializeApp, deleteApp } = await import("firebase/app");
+          const { getAuth, createUserWithEmailAndPassword, signOut: fbSignOut } = await import("firebase/auth");
+          const firebaseConfig = await getFirebaseConfig();
 
-        const tempAuth = getAuth(tempApp);
-        await createUserWithEmailAndPassword(tempAuth, cleanEmail, password);
-        await fbSignOut(tempAuth);
-        await deleteApp(tempApp);
-      } catch (authErr: any) {
-        console.warn("Firebase Auth Soft Registration skipped (Sandbox Mode Active):", authErr.message);
+          let tempApp;
+          try {
+            tempApp = initializeApp(firebaseConfig, "RMATempAdminRegisterApp");
+          } catch (err) {
+            const { getApps } = await import("firebase/app");
+            const apps = getApps();
+            tempApp = apps.find(app => app.name === "RMATempAdminRegisterApp") || initializeApp(firebaseConfig, "RMATempAdminRegisterApp");
+          }
+
+          const tempAuth = getAuth(tempApp);
+          await createUserWithEmailAndPassword(tempAuth, cleanEmail, password);
+          await fbSignOut(tempAuth);
+          await deleteApp(tempApp);
+        } catch (authErr: any) {
+          console.warn("Firebase Auth Soft Registration skipped:", authErr.message);
+        }
       }
 
+      await refreshAdminOperatorsDirectory();
+
+      const wasEditing = !!editingOperatorEmail;
+      setNewAdminName("");
       setNewAdminEmail("");
       setNewAdminPassword("");
-      showFeedback(`Successfully registered new admin account: ${cleanEmail}`, "success");
-      addTerminalLog(`🛡️ [SECURITY] New admin email added: ${cleanEmail}`);
+      setNewAdminCanWrite(true);
+      setNewAdminAllowedTabs([...DEFAULT_LIMITED_ADMIN_TABS]);
+      setEditingOperatorEmail(null);
+
+      showFeedback(
+        wasEditing
+          ? `Updated access permissions for ${cleanEmail} (${sanitizedTabs.length} modules)`
+          : `Created new Admin account for ${cleanEmail} (${sanitizedTabs.length} modules granted)`,
+        "success"
+      );
+      addTerminalLog(
+        `🛡️ [SUPER ADMIN] ${wasEditing ? "Updated" : "Created"} Admin "${cleanEmail}" with ${sanitizedTabs.length} allowed modules [${newAdminCanWrite ? "Read & Write" : "Read-Only"}].`
+      );
 
       await saveAuditLog({
         adminEmail: currentEmail,
-        action: "Admin Registered",
-        details: `Administrator registered a new standard admin credential: ${cleanEmail}`
+        action: wasEditing ? "Admin Permissions Updated" : "Admin Created",
+        details: `Super Admin configured ${cleanEmail} with ${sanitizedTabs.length} modules (${newAdminCanWrite ? "Read & Write" : "Read Only"}).`
       });
     } catch (err: any) {
       console.error(err);
-      let errMsg = err.message || "Failed to register standard admin credential.";
+      const errMsg = err.message || "Failed to save administrator account.";
       setAdminRegisterError(errMsg);
     } finally {
       setIsRegisteringAdmin(false);
@@ -2248,6 +2530,10 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       <AdminSidebar
         activeTab={activeTab}
         setActiveTab={(tab) => {
+          if (!isSuperAdmin && !effectiveAllowedTabs.includes(tab)) {
+            showFeedback("Access Restricted: The Super Admin has not enabled that module for your account.", "error");
+            return;
+          }
           setActiveTab(tab);
           setIsMobileSidebarOpen(false);
         }}
@@ -2255,6 +2541,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         hasWriteAccess={hasWriteAccess}
         currentEmail={currentEmail}
         userRole={userRole}
+        allowedTabs={effectiveAllowedTabs}
         onSignOut={handleSignOut}
         onGoBackToWebsite={onBack}
         isOpen={isMobileSidebarOpen}
@@ -2476,8 +2763,11 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             {activeTab === "user-management" && (
               <AdminUserManagement
                 hasWriteAccess={hasWriteAccess}
+                isSuperAdmin={isSuperAdmin}
+                currentAdminEmail={currentEmail}
                 onLogAction={(msg) => {
                   addTerminalLog(msg);
+                  refreshAdminOperatorsDirectory();
                   saveAuditLog({
                     adminEmail: currentEmail,
                     action: "Platform User Record Shifted",
@@ -2487,8 +2777,8 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
               />
             )}
 
-            {/* Tab: Access Roles & Credentials Administration */}
-            {activeTab === "security" && (
+            {/* Tab: Super Admin Access Roles & Operator Provisioning */}
+            {activeTab === "security" && isSuperAdmin && (
               <motion.div
                 key="security"
                 initial={{ opacity: 0, y: 10 }}
@@ -2497,122 +2787,484 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
                 className="space-y-6 text-left"
               >
                 <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
-                  <div className="flex items-center gap-2.5 border-b border-light pb-4">
-                    <div className="w-10 h-10 bg-amber-500/15 rounded-xl flex items-center justify-center text-amber-600 shrink-0">
-                      <Lock size={18} />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-black uppercase text-slate-900 tracking-tight">Access Control & Security Provisioning</h3>
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-404 block mt-0.5">Control registered administrators directory and secure system anchors</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 bg-amber-500/15 rounded-2xl flex items-center justify-center text-amber-600 shrink-0">
+                        <ShieldCheck size={22} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-black uppercase text-slate-900 tracking-tight">
+                            Super Admin Sovereign Control Center
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                            System Owner Only
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-500 block mt-0.5">
+                          Create sub-administrators, set their login credentials, and choose the exact modules &amp; permissions they can access.
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-2">
-                    {/* Left Panel: Register and manage list */}
-                    <div className="space-y-4">
-                      <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl">
-                        <h4 className="text-xs font-black uppercase text-slate-800 tracking-wide mb-2">🛡️ Hardcoded Anchor Keys</h4>
-                        <p className="text-[10.5px] text-slate-450 leading-relaxed mb-4">
-                          Founders are always granted supreme imperial auth access clearance to modify core schemas.
-                        </p>
-                        
-                        <div className="space-y-2 mb-4 font-mono text-slate-800">
-                          {[
-                            { email: "olosundelouis@gmail.com", role: "Website Owner / Primary Super Admin 👑" },
-                            { email: "rightmindsafrica@gmail.com", role: "Super Admin 🛡️" },
-                            { email: "corpersimpactinitiative@gmail.com", role: "Super Admin 🛡️" }
-                          ].map(ad => (
-                            <div key={ad.email} className="bg-white p-3 rounded-xl border border-slate-100 flex justify-between items-center text-2xs">
-                              <span className="font-extrabold break-all text-[#103D2E]">{ad.email}</span>
-                              <span className="shrink-0 bg-amber-100 text-amber-900 rounded border border-amber-250 py-0.5 px-2 text-[8px] font-black">{ad.role}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Register Form */}
-                        <div className="mt-6 pt-6 border-t border-slate-150">
-                          {isSuperAdmin ? (
-                            <form onSubmit={handleRegisterAdminSubmit} className="space-y-3">
-                              <h5 className="text-[10.5px] font-black uppercase text-[#103D2E] tracking-wider">🔑 Operational User Registration</h5>
-                              
-                              <div>
-                                <label className="block text-[8px] uppercase tracking-wider font-mono font-black text-slate-400 mb-1">New Administrator Email:</label>
-                                <input
-                                  type="email"
-                                  value={newAdminEmail}
-                                  onChange={(e) => setNewAdminEmail(e.target.value)}
-                                  placeholder="admin@rightminds.com"
-                                  required
-                                  className="w-full p-2 border border-slate-200 focus:border-[#103D2E] rounded-lg text-2xs outline-none bg-white font-mono"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-[8px] uppercase tracking-wider font-mono font-black text-slate-400 mb-1">Temporary Password Key:</label>
-                                <input
-                                  type="password"
-                                  value={newAdminPassword}
-                                  onChange={(e) => setNewAdminPassword(e.target.value)}
-                                  placeholder="••••••••••"
-                                  required
-                                  className="w-full p-2 border border-slate-200 focus:border-[#103D2E] rounded-lg text-2xs outline-none bg-white font-mono"
-                                />
-                              </div>
-
-                              {adminRegisterError && (
-                                <p className="text-[10px] text-red-650 bg-red-50 p-2 rounded-lg border border-red-150 font-mono">⚠️ {adminRegisterError}</p>
-                              )}
-
-                              <button
-                                type="submit"
-                                disabled={isRegisteringAdmin}
-                                className="w-full py-2 bg-[#103D2E] hover:bg-[#07130F] text-amber-300 font-extrabold rounded-lg text-2xs uppercase tracking-wider transition-colors cursor-pointer"
-                              >
-                                {isRegisteringAdmin ? "Provisioning..." : "Onboard Authorized Administrator"}
-                              </button>
-                            </form>
-                          ) : (
-                            <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 text-[10.5px] text-amber-850 leading-relaxed font-sans">
-                              🔒 <strong>Super Admin Restriction:</strong> Registering standard administration tokens is authorized exclusively for Super Admin identities. Please consult project leads.
-                            </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 pt-2">
+                    {/* Left Column (7 cols): Create / Edit Limited Admin & Module Matrix */}
+                    <div className="xl:col-span-7 space-y-6">
+                      <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl space-y-5">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                          <div>
+                            <h4 className="text-xs font-black uppercase text-[#103D2E] tracking-wider">
+                              {editingOperatorEmail
+                                ? `✏️ Editing Admin Permissions: ${editingOperatorEmail}`
+                                : "➕ Create New Limited Admin Account"}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {editingOperatorEmail
+                                ? "Update the modules, write capability, or reset the password for this Admin."
+                                : "Provision a new Admin user with restricted access to only the sections you select below."}
+                            </p>
+                          </div>
+                          {editingOperatorEmail && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingOperatorEmail(null);
+                                setNewAdminName("");
+                                setNewAdminEmail("");
+                                setNewAdminPassword("");
+                                setNewAdminCanWrite(true);
+                                setNewAdminAllowedTabs([...DEFAULT_LIMITED_ADMIN_TABS]);
+                                setAdminRegisterError("");
+                              }}
+                              className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 cursor-pointer"
+                            >
+                              Cancel Edit
+                            </button>
                           )}
                         </div>
+
+                        <form onSubmit={handleRegisterAdminSubmit} className="space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            <div>
+                              <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-600 mb-1">
+                                Full Name / Title
+                              </label>
+                              <input
+                                type="text"
+                                value={newAdminName}
+                                onChange={(e) => setNewAdminName(e.target.value)}
+                                placeholder="e.g. Grace Okafor (Events Lead)"
+                                className="w-full px-3 py-2 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-white"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-600 mb-1">
+                                Admin Login Email *
+                              </label>
+                              <input
+                                type="email"
+                                value={newAdminEmail}
+                                onChange={(e) => setNewAdminEmail(e.target.value)}
+                                placeholder="admin.member@rightminds.org"
+                                required
+                                disabled={!!editingOperatorEmail}
+                                className="w-full px-3 py-2 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-white font-mono disabled:bg-slate-100 disabled:text-slate-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            <div>
+                              <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-600 mb-1">
+                                {editingOperatorEmail ? "New Password (optional)" : "Login Password *"}
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type={showNewAdminPassword ? "text" : "password"}
+                                  value={newAdminPassword}
+                                  onChange={(e) => setNewAdminPassword(e.target.value)}
+                                  placeholder={editingOperatorEmail ? "Leave blank to keep existing" : "Set password (min 6 chars)"}
+                                  required={!editingOperatorEmail}
+                                  className="w-full px-3 py-2 pr-14 border border-slate-200 focus:border-[#103D2E] rounded-xl text-xs outline-none bg-white font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowNewAdminPassword((v) => !v)}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+                                >
+                                  {showNewAdminPassword ? "HIDE" : "SHOW"}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-600 mb-1">
+                                Action Authority Level
+                              </label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setNewAdminCanWrite(true)}
+                                  className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                                    newAdminCanWrite
+                                      ? "bg-[#103D2E] text-amber-300 border-[#103D2E]"
+                                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  ✏️ Read &amp; Write
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNewAdminCanWrite(false)}
+                                  className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                                    !newAdminCanWrite
+                                      ? "bg-amber-600 text-white border-amber-600"
+                                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  👁️ View Only
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 1-Click Role Presets */}
+                          <div className="pt-1">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-600">
+                                Quick Access Templates (1-Click Presets)
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setNewAdminAllowedTabs(
+                                      ALL_ADMIN_MODULES.filter((m) => !m.superAdminOnly).map((m) => m.id)
+                                    )
+                                  }
+                                  className="text-[10px] font-bold text-emerald-700 hover:underline cursor-pointer"
+                                >
+                                  Select All Standard
+                                </button>
+                                <span className="text-slate-300">|</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setNewAdminAllowedTabs(["dashboard"])}
+                                  className="text-[10px] font-bold text-slate-500 hover:underline cursor-pointer"
+                                >
+                                  Minimal (Overview Only)
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {ADMIN_ACCESS_PRESETS.map((preset) => (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewAdminAllowedTabs([...preset.tabs]);
+                                    setNewAdminCanWrite(preset.canWrite);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-[10px] font-bold text-slate-700 transition cursor-pointer"
+                                  title={preset.description}
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Granular Module Access Checkboxes */}
+                          <div className="space-y-3 pt-1">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-600">
+                                Allowed Sidebar Modules ({newAdminAllowedTabs.length} selected)
+                              </label>
+                              <span className="text-[10px] font-mono text-amber-700 font-semibold">
+                                Super Admin modules are locked automatically
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
+                              {ADMIN_MODULE_GROUPS.map((group) => {
+                                const assignableItems = group.items.filter((i) => !i.superAdminOnly);
+                                if (assignableItems.length === 0) return null;
+                                return (
+                                  <div
+                                    key={group.group}
+                                    className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-2"
+                                  >
+                                    <div className="flex items-center justify-between border-b border-slate-100 pb-1">
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-[#103D2E]">
+                                        {group.group}
+                                      </span>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      {assignableItems.map((mod) => {
+                                        const checked = newAdminAllowedTabs.includes(mod.id);
+                                        return (
+                                          <label
+                                            key={mod.id}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs cursor-pointer transition ${
+                                              checked
+                                                ? "bg-emerald-50/70 text-[#103D2E] font-bold"
+                                                : "text-slate-600 hover:bg-slate-50"
+                                            }`}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={checked}
+                                              onChange={() => {
+                                                setNewAdminAllowedTabs((prev) =>
+                                                  prev.includes(mod.id)
+                                                    ? prev.filter((id) => id !== mod.id)
+                                                    : [...prev, mod.id]
+                                                );
+                                              }}
+                                              className="rounded border-slate-300 text-[#103D2E] focus:ring-[#103D2E]"
+                                            />
+                                            <span className="truncate text-[11px]">{mod.label}</span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {adminRegisterError && (
+                            <p className="text-xs text-red-700 bg-red-50 p-3 rounded-xl border border-red-200 font-medium">
+                              ⚠️ {adminRegisterError}
+                            </p>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isRegisteringAdmin}
+                            className="w-full py-3 bg-[#103D2E] hover:bg-[#07130F] text-amber-300 font-black rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-sm"
+                          >
+                            {isRegisteringAdmin
+                              ? "Saving Administrator Access..."
+                              : editingOperatorEmail
+                              ? `Save Updated Access for ${editingOperatorEmail}`
+                              : `Create Limited Admin (${newAdminAllowedTabs.length} Modules Granted)`}
+                          </button>
+                        </form>
                       </div>
                     </div>
 
-                    {/* Right Panel: Entrance Log audits timeline */}
-                    <div className="space-y-4">
-                      <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl h-full flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-center mb-1.5 pb-2.5 border-b border-light border-dashed">
-                            <h4 className="text-xs font-black uppercase text-slate-800 tracking-wide">📋 Entrance Audit Trail</h4>
-                            {isSuperAdmin && accessLogs.length > 0 && (
-                              <button
-                                onClick={handleClearAccessLogs}
-                                className="text-[9px] uppercase font-bold text-red-650 hover:underline cursor-pointer bg-transparent border-none"
-                              >
-                                Clear History
-                              </button>
-                            )}
+                    {/* Right Column (5 cols): Active Admin Directory + Sovereign Anchors + Entrance Audit */}
+                    <div className="xl:col-span-5 space-y-5">
+                      {/* Created Limited Admins Directory */}
+                      <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                          <div>
+                            <h4 className="text-xs font-black uppercase text-slate-800 tracking-wide">
+                              👥 Delegated Admins ({adminOperatorsList.filter((o) => !ANCHOR_SUPER_ADMIN_EMAILS.includes(o.email.toLowerCase())).length})
+                            </h4>
+                            <p className="text-[10px] text-slate-500">
+                              Click any Admin to customize what tabs they see or revoke access.
+                            </p>
                           </div>
+                        </div>
 
-                          <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
-                            {accessLogs.length === 0 ? (
-                              <p className="text-slate-400 py-10 text-center font-mono text-2s">No recent access sessions logged.</p>
-                            ) : (
-                              accessLogs.map((lg, index) => (
-                                <div key={index} className="bg-white p-2.5 rounded-lg border border-slate-100 flex justify-between items-center font-mono text-[10px]">
-                                  <div>
-                                    <p className="font-extrabold text-[#103D2E] break-all leading-tight">{lg.email}</p>
-                                    <p className="text-slate-400 text-[9px] leading-tight mt-0.5">Role: {lg.role || "Admin"}</p>
+                        <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                          {adminOperatorsList.filter((o) => !ANCHOR_SUPER_ADMIN_EMAILS.includes(o.email.toLowerCase())).length === 0 ? (
+                            <div className="p-6 bg-white rounded-xl border border-dashed border-slate-200 text-center space-y-1">
+                              <p className="text-xs font-bold text-slate-600">No delegated Admins created yet</p>
+                              <p className="text-[11px] text-slate-400">
+                                Use the form on the left to create an Admin account and assign their allowed modules.
+                              </p>
+                            </div>
+                          ) : (
+                            adminOperatorsList
+                              .filter((o) => !ANCHOR_SUPER_ADMIN_EMAILS.includes(o.email.toLowerCase()))
+                              .map((op) => {
+                                const tabCount = op.allowedTabs?.length || DEFAULT_LIMITED_ADMIN_TABS.length;
+                                const isSuspended = op.status === "Suspended";
+                                return (
+                                  <div
+                                    key={op.email}
+                                    className={`p-3.5 bg-white rounded-xl border transition space-y-2 ${
+                                      editingOperatorEmail === op.email
+                                        ? "border-[#103D2E] ring-2 ring-[#103D2E]/15"
+                                        : "border-slate-200/80"
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-black text-slate-900 truncate">
+                                          {op.fullName || op.email.split("@")[0]}
+                                        </p>
+                                        <p className="text-[11px] font-mono text-[#103D2E] font-bold break-all">
+                                          {op.email}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <span
+                                          className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                            isSuspended
+                                              ? "bg-red-100 text-red-700"
+                                              : op.canWrite !== false
+                                              ? "bg-emerald-100 text-emerald-800"
+                                              : "bg-amber-100 text-amber-800"
+                                          }`}
+                                        >
+                                          {isSuspended
+                                            ? "Suspended"
+                                            : op.canWrite !== false
+                                            ? "Read & Write"
+                                            : "View Only"}
+                                        </span>
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-100 text-slate-700">
+                                          {tabCount} Modules
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingOperatorEmail(op.email);
+                                          setNewAdminName(op.fullName || "");
+                                          setNewAdminEmail(op.email);
+                                          setNewAdminPassword("");
+                                          setNewAdminCanWrite(op.canWrite !== false);
+                                          setNewAdminAllowedTabs(
+                                            ((op.allowedTabs && op.allowedTabs.length > 0
+                                              ? op.allowedTabs
+                                              : DEFAULT_LIMITED_ADMIN_TABS) as AdminTabType[])
+                                          );
+                                          setAdminRegisterError("");
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#103D2E] text-[10px] font-black uppercase tracking-wider transition cursor-pointer"
+                                      >
+                                        ⚙️ Configure Access
+                                      </button>
+
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            const nextStatus = isSuspended ? "Active" : "Suspended";
+                                            await saveAdminOperator({
+                                              email: op.email,
+                                              fullName: op.fullName,
+                                              role: "Admin",
+                                              allowedTabs: op.allowedTabs || DEFAULT_LIMITED_ADMIN_TABS,
+                                              canWrite: op.canWrite !== false,
+                                              status: nextStatus,
+                                              createdBy: currentEmail
+                                            });
+                                            await refreshAdminOperatorsDirectory();
+                                            showFeedback(
+                                              `${op.email} is now ${nextStatus}.`,
+                                              nextStatus === "Active" ? "success" : "error"
+                                            );
+                                          }}
+                                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer"
+                                        >
+                                          {isSuspended ? "Activate" : "Suspend"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            await deleteAdminOperator(op.email);
+                                            if (editingOperatorEmail === op.email) {
+                                              setEditingOperatorEmail(null);
+                                              setNewAdminEmail("");
+                                            }
+                                            await refreshAdminOperatorsDirectory();
+                                            showFeedback(`Removed admin access for ${op.email}`, "success");
+                                          }}
+                                          className="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-[10px] font-bold cursor-pointer"
+                                        >
+                                          Revoke
+                                        </button>
+                                      </div>
+                                    </div>
                                   </div>
-                                  <span className="text-slate-400 text-[9px] shrink-0 font-bold">
-                                    {new Date(lg.timestamp).toLocaleTimeString("en-NG", { hour: '2-digit', minute: '2-digit', hour12: false })}
-                                  </span>
+                                );
+                              })
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Sovereign Super Admin Owners */}
+                      <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <h4 className="text-xs font-black uppercase text-slate-800 tracking-wide mb-1.5">
+                          👑 Sovereign System Owners (Super Admins)
+                        </h4>
+                        <p className="text-[10.5px] text-slate-500 leading-relaxed mb-3">
+                          Protected owner identities with permanent unrestricted access to all modules and admin provisioning.
+                        </p>
+                        <div className="space-y-2 font-mono text-slate-800">
+                          {[
+                            { email: "olosundelouis@gmail.com", role: "System Owner / Primary Super Admin 👑" },
+                            { email: "rightmindsafrica@gmail.com", role: "Super Admin 🛡️" },
+                            { email: "corpersimpactinitiative@gmail.com", role: "Super Admin 🛡️" }
+                          ].map((ad) => (
+                            <div
+                              key={ad.email}
+                              className="bg-white p-2.5 rounded-xl border border-slate-100 flex justify-between items-center text-[11px]"
+                            >
+                              <span className="font-extrabold break-all text-[#103D2E]">{ad.email}</span>
+                              <span className="shrink-0 bg-amber-100 text-amber-900 rounded border border-amber-200 py-0.5 px-2 text-[9px] font-black">
+                                {ad.role}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Entrance Audit Trail */}
+                      <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-200 border-dashed">
+                          <h4 className="text-xs font-black uppercase text-slate-800 tracking-wide">
+                            📋 Entrance Audit Trail
+                          </h4>
+                          {isSuperAdmin && accessLogs.length > 0 && (
+                            <button
+                              onClick={handleClearAccessLogs}
+                              className="text-[9px] uppercase font-bold text-red-600 hover:underline cursor-pointer bg-transparent border-none"
+                            >
+                              Clear History
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                          {accessLogs.length === 0 ? (
+                            <p className="text-slate-400 py-6 text-center font-mono text-xs">
+                              No recent access sessions logged.
+                            </p>
+                          ) : (
+                            accessLogs.map((lg, index) => (
+                              <div
+                                key={index}
+                                className="bg-white p-2.5 rounded-lg border border-slate-100 flex justify-between items-center font-mono text-[10px]"
+                              >
+                                <div>
+                                  <p className="font-extrabold text-[#103D2E] break-all leading-tight">{lg.email}</p>
+                                  <p className="text-slate-400 text-[9px] leading-tight mt-0.5">
+                                    Role: {lg.role || "Admin"}
+                                  </p>
                                 </div>
-                              ))
-                            )}
-                          </div>
+                                <span className="text-slate-400 text-[9px] shrink-0 font-bold">
+                                  {new Date(lg.timestamp).toLocaleTimeString("en-NG", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    hour12: false
+                                  })}
+                                </span>
+                              </div>
+                            ))
+                          )}
                         </div>
                       </div>
                     </div>

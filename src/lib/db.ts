@@ -1486,10 +1486,19 @@ export async function clearAuditLogs(): Promise<void> {
 
 export interface FallbackAdminUser {
   email: string;
-  role: "Super Admin" | "Admin";
+  fullName?: string;
+  role: "Super Admin" | "Admin" | "Editor" | "Viewer" | "Viewer (Read Only)";
+  allowedTabs?: string[];
+  canWrite?: boolean;
+  status?: "Active" | "Suspended";
+  passwordDigest?: string;
   passwordHash?: string;
+  createdBy?: string;
   createdAt: string;
+  updatedAt?: string;
 }
+
+export type AdminOperatorRecord = FallbackAdminUser;
 
 const ADMIN_SALT_V1 = "rma_sovereign_salt_2026_v1";
 const MASTER_ADMIN_SHA256_DIGESTS = new Set([
@@ -1503,6 +1512,12 @@ const MASTER_ADMIN_SHA256_DIGESTS = new Set([
   "ad92119cf7ebd3eb958a6dd1c3f3de2b8eb87fa3ec0818cf4d023ccb27962f8b"
 ]);
 
+export const ANCHOR_SUPER_ADMIN_EMAILS = [
+  "olosundelouis@gmail.com",
+  "rightmindsafrica@gmail.com",
+  "corpersimpactinitiative@gmail.com"
+];
+
 async function computeSha256Hex(input: string): Promise<string> {
   if (typeof window !== "undefined" && window.crypto?.subtle) {
     const data = new TextEncoder().encode(input);
@@ -1512,6 +1527,12 @@ async function computeSha256Hex(input: string): Promise<string> {
       .join("");
   }
   return "";
+}
+
+export async function computeSaltedPasswordDigest(passwordInput: string): Promise<string> {
+  const trimmed = (passwordInput || "").trim();
+  if (!trimmed) return "";
+  return computeSha256Hex(`${ADMIN_SALT_V1}:${trimmed}`);
 }
 
 export async function verifySaltedAdminDigest(passwordInput: string): Promise<boolean> {
@@ -1526,10 +1547,12 @@ export async function verifySaltedAdminDigest(passwordInput: string): Promise<bo
 
 export async function createClientSignedSession(
   email: string,
-  role: "Super Admin" | "Admin" | "Editor" | "Viewer" | "Viewer (Read Only)"
-): Promise<{ email: string; role: any; token: string; expiresAt: number }> {
+  role: "Super Admin" | "Admin" | "Editor" | "Viewer" | "Viewer (Read Only)",
+  allowedTabs?: string[],
+  canWrite?: boolean
+): Promise<{ email: string; role: any; allowedTabs?: string[]; canWrite?: boolean; token: string; expiresAt: number }> {
   const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
-  const payloadObj = { email, role, expiresAt };
+  const payloadObj = { email, role, allowedTabs, canWrite, expiresAt };
   const payloadB64 = typeof window !== "undefined"
     ? window.btoa(JSON.stringify(payloadObj)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
     : "session";
@@ -1537,9 +1560,143 @@ export async function createClientSignedSession(
   return {
     email,
     role,
+    allowedTabs,
+    canWrite,
     token: `${payloadB64}.${sigHex.slice(0, 43)}`,
     expiresAt
   };
+}
+
+export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
+  let list: AdminOperatorRecord[] = [];
+  if (typeof window !== "undefined") {
+    try {
+      const saved = localStorage.getItem("rma_admin_operators_directory");
+      if (saved) {
+        list = JSON.parse(saved);
+      }
+    } catch {}
+  }
+
+  try {
+    const { collection, getDocs } = await import("firebase/firestore");
+    const db = await getFirestoreDb();
+    const snap = await getDocs(collection(db, "admins"));
+    const fbList: AdminOperatorRecord[] = [];
+    snap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const email = (data.email || docSnap.id || "").toLowerCase().trim();
+      if (email) {
+        fbList.push({
+          email,
+          fullName: data.fullName || email.split("@")[0],
+          role: ANCHOR_SUPER_ADMIN_EMAILS.includes(email) ? "Super Admin" : (data.role || "Admin"),
+          allowedTabs: Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined,
+          canWrite: typeof data.canWrite === "boolean" ? data.canWrite : true,
+          status: data.status || "Active",
+          passwordDigest: data.passwordDigest,
+          createdBy: data.createdBy,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt
+        });
+      }
+    });
+    if (fbList.length > 0) {
+      // Merge with local list so any offline-created operator is preserved
+      const map = new Map<string, AdminOperatorRecord>();
+      for (const item of list) {
+        map.set(item.email.toLowerCase(), item);
+      }
+      for (const fbItem of fbList) {
+        const existing = map.get(fbItem.email.toLowerCase());
+        map.set(fbItem.email.toLowerCase(), {
+          ...existing,
+          ...fbItem,
+          allowedTabs: fbItem.allowedTabs || existing?.allowedTabs,
+          passwordDigest: fbItem.passwordDigest || existing?.passwordDigest
+        });
+      }
+      list = Array.from(map.values());
+      if (typeof window !== "undefined") {
+        localStorage.setItem("rma_admin_operators_directory", JSON.stringify(list));
+      }
+    }
+  } catch (err) {
+    console.warn("Could not fetch admins collection from Firestore, using cached directory:", err);
+  }
+
+  return list;
+}
+
+export async function authenticateOperatorAccount(
+  email: string,
+  passwordInput: string
+): Promise<{
+  email: string;
+  fullName?: string;
+  role: "Super Admin" | "Admin" | "Editor" | "Viewer" | "Viewer (Read Only)";
+  allowedTabs?: string[];
+  canWrite?: boolean;
+  status?: "Active" | "Suspended";
+} | null> {
+  const cleanEmail = (email || "").trim().toLowerCase();
+  const cleanPass = (passwordInput || "").trim();
+  if (!cleanEmail || !cleanPass) return null;
+
+  const candidateDigest = await computeSaltedPasswordDigest(cleanPass);
+  const candidateLowerDigest = await computeSaltedPasswordDigest(cleanPass.toLowerCase());
+
+  const operators = await getAdminOperators();
+  const matchedOp = operators.find((op) => op.email.toLowerCase() === cleanEmail);
+
+  if (matchedOp) {
+    if (matchedOp.status === "Suspended") {
+      throw new Error("Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin).");
+    }
+    if (
+      matchedOp.passwordDigest &&
+      (matchedOp.passwordDigest === candidateDigest || matchedOp.passwordDigest === candidateLowerDigest)
+    ) {
+      return {
+        email: matchedOp.email,
+        fullName: matchedOp.fullName,
+        role: ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail) ? "Super Admin" : matchedOp.role,
+        allowedTabs: matchedOp.allowedTabs,
+        canWrite: matchedOp.canWrite ?? true,
+        status: matchedOp.status || "Active"
+      };
+    }
+  }
+
+  // Also check PlatformUsers if an Admin was created there with passwordDigest
+  const users = await getPlatformUsers();
+  const matchedUser = users.find((u) => u.email.toLowerCase() === cleanEmail && u.role !== "Student");
+  if (matchedUser) {
+    if (matchedUser.status === "Suspended" || matchedUser.status === "Deactivated") {
+      throw new Error("Access Revoked: Your account has been suspended or deactivated by the System Owner (Super Admin).");
+    }
+    if (
+      matchedUser.passwordDigest &&
+      (matchedUser.passwordDigest === candidateDigest || matchedUser.passwordDigest === candidateLowerDigest)
+    ) {
+      return {
+        email: matchedUser.email.toLowerCase(),
+        fullName: matchedUser.fullName,
+        role: ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail)
+          ? "Super Admin"
+          : matchedUser.role === "Admin"
+          ? "Admin"
+          : matchedUser.role === "Viewer"
+          ? "Viewer (Read Only)"
+          : "Editor",
+        allowedTabs: matchedUser.allowedTabs,
+        canWrite: matchedUser.canWrite ?? (matchedUser.role === "Admin"),
+        status: "Active"
+      };
+    }
+  }
+
+  return null;
 }
 
 // Authenticate administrator session strictly via server-side or WebCrypto SHA-256 verification
@@ -1553,6 +1710,15 @@ export async function authenticateFallbackAdmin(email: string, passwordInput: st
     try {
       localStorage.removeItem("rma_local_admin_credentials");
     } catch {}
+  }
+
+  try {
+    const opMatch = await authenticateOperatorAccount(cleanEmail, cleanPass);
+    if (opMatch) {
+      return opMatch.role === "Viewer (Read Only)" ? "Viewer" : opMatch.role;
+    }
+  } catch (err) {
+    throw err;
   }
 
   try {
@@ -1573,51 +1739,198 @@ export async function authenticateFallbackAdmin(email: string, passwordInput: st
   }
 
   if (await verifySaltedAdminDigest(passwordInput)) {
-    return "Super Admin";
+    return ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail) ? "Super Admin" : "Super Admin";
   }
 
   return null;
 }
 
-// Register or update an operator credential strictly via server-side salted scrypt hashing
-export async function registerFallbackAdmin(email: string, passwordInput: string, role: "Super Admin" | "Admin" | "Editor" | "Viewer" = "Admin"): Promise<void> {
-  const cleanEmail = email.trim().toLowerCase();
+// Save or update an Admin Operator (Super Admin Only)
+export async function saveAdminOperator(options: {
+  email: string;
+  fullName?: string;
+  passwordInput?: string;
+  role?: "Super Admin" | "Admin" | "Editor" | "Viewer (Read Only)";
+  allowedTabs?: string[];
+  canWrite?: boolean;
+  status?: "Active" | "Suspended";
+  createdBy?: string;
+}): Promise<AdminOperatorRecord> {
+  const cleanEmail = options.email.trim().toLowerCase();
+  if (!cleanEmail) {
+    throw new Error("Administrator email is required.");
+  }
 
-  // Purge any legacy plaintext credential store from localStorage
+  let passwordDigest: string | undefined = undefined;
+  if (options.passwordInput && options.passwordInput.trim()) {
+    passwordDigest = await computeSaltedPasswordDigest(options.passwordInput.trim());
+  }
+
+  const existingList = await getAdminOperators();
+  const existing = existingList.find((o) => o.email.toLowerCase() === cleanEmail);
+
+  const finalRole = ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail)
+    ? "Super Admin"
+    : (options.role || existing?.role || "Admin");
+
+  const record: AdminOperatorRecord = {
+    email: cleanEmail,
+    fullName: options.fullName?.trim() || existing?.fullName || cleanEmail.split("@")[0],
+    role: finalRole,
+    allowedTabs: options.allowedTabs ?? existing?.allowedTabs ?? [
+      "dashboard",
+      "reg-cii",
+      "reg-rma",
+      "teen-bootcamp",
+      "events",
+      "resources",
+      "gallery",
+      "messages",
+      "visitors-live"
+    ],
+    canWrite: options.canWrite !== undefined ? options.canWrite : (existing?.canWrite ?? true),
+    status: options.status || existing?.status || "Active",
+    passwordDigest: passwordDigest || existing?.passwordDigest,
+    createdBy: options.createdBy || existing?.createdBy || "olosundelouis@gmail.com",
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  // 1. Update local directory cache
   if (typeof window !== "undefined") {
     try {
-      localStorage.removeItem("rma_local_admin_credentials");
+      const updatedList = existingList.filter((o) => o.email.toLowerCase() !== cleanEmail);
+      updatedList.unshift(record);
+      localStorage.setItem("rma_admin_operators_directory", JSON.stringify(updatedList));
+      window.dispatchEvent(new Event("rma_admin_operators_updated"));
     } catch {}
   }
 
-  let token = "";
-  if (typeof window !== "undefined") {
+  // 2. Write to Firestore `admins/{cleanEmail}`
+  try {
+    const { doc, setDoc } = await import("firebase/firestore");
+    const db = await getFirestoreDb();
+    const firestorePayload: Record<string, any> = {
+      email: record.email,
+      fullName: record.fullName,
+      role: record.role,
+      allowedTabs: record.allowedTabs,
+      canWrite: record.canWrite,
+      status: record.status,
+      createdBy: record.createdBy,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt
+    };
+    if (record.passwordDigest) {
+      firestorePayload.passwordDigest = record.passwordDigest;
+    }
+    await setDoc(doc(db, "admins", cleanEmail), firestorePayload, { merge: true });
+  } catch (fsErr) {
+    console.warn("Firestore admins write deferred or offline:", fsErr);
+  }
+
+  // 3. Sync with PlatformUsers (`users` collection) so both tabs stay in 100% sync
+  try {
+    const platformUsers = await getPlatformUsers();
+    const existingUser = platformUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    const syncedUser: PlatformUser = {
+      id: existingUser?.id || `usr-admin-${Date.now()}`,
+      fullName: record.fullName || cleanEmail.split("@")[0],
+      email: cleanEmail,
+      phone: existingUser?.phone || "+234",
+      role: record.role === "Viewer (Read Only)" ? "Viewer" : "Admin",
+      status: record.status === "Suspended" ? "Suspended" : "Active",
+      joinedAt: existingUser?.joinedAt || record.createdAt,
+      location: existingUser?.location || "HQ Operations",
+      emailVerified: true,
+      verificationDate: existingUser?.verificationDate || new Date().toISOString(),
+      allowedTabs: record.allowedTabs,
+      canWrite: record.canWrite,
+      passwordDigest: record.passwordDigest
+    };
+    await savePlatformUser(syncedUser);
+  } catch (syncErr) {
+    console.warn("PlatformUser sync notice:", syncErr);
+  }
+
+  // 4. Sync with backend server if password was provided
+  if (options.passwordInput && options.passwordInput.trim()) {
     try {
-      const saved = localStorage.getItem("rma_current_logged_in_user");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        token = parsed?.token || "";
+      let token = "";
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("rma_current_logged_in_user");
+        if (saved) {
+          token = JSON.parse(saved)?.token || "";
+        }
+      }
+      if (token) {
+        await fetch("/api/admin/register-operator", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            email: cleanEmail,
+            fullName: record.fullName,
+            password: options.passwordInput.trim(),
+            role: record.role,
+            allowedTabs: record.allowedTabs,
+            canWrite: record.canWrite
+          })
+        }).catch(() => null);
       }
     } catch {}
   }
 
-  if (!token) {
-    throw new Error("Unauthorized: Active Super Admin or Admin session token is required.");
+  return record;
+}
+
+export async function deleteAdminOperator(email: string): Promise<void> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail)) {
+    throw new Error("System Owner / Anchor Super Admin accounts cannot be deleted.");
   }
 
-  const response = await fetch("/api/admin/register-operator", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`
-    },
-    body: JSON.stringify({ email: cleanEmail, password: passwordInput, role })
+  if (typeof window !== "undefined") {
+    try {
+      const saved = localStorage.getItem("rma_admin_operators_directory");
+      if (saved) {
+        const list: AdminOperatorRecord[] = JSON.parse(saved);
+        const filtered = list.filter((o) => o.email.toLowerCase() !== cleanEmail);
+        localStorage.setItem("rma_admin_operators_directory", JSON.stringify(filtered));
+        window.dispatchEvent(new Event("rma_admin_operators_updated"));
+      }
+    } catch {}
+  }
+
+  try {
+    const { doc, deleteDoc } = await import("firebase/firestore");
+    const db = await getFirestoreDb();
+    await deleteDoc(doc(db, "admins", cleanEmail));
+  } catch (err) {
+    console.warn("Failed deleting admin operator from Firestore:", err);
+  }
+}
+
+// Register or update an operator credential strictly via Super Admin authority
+export async function registerFallbackAdmin(
+  email: string,
+  passwordInput: string,
+  role: "Super Admin" | "Admin" | "Editor" | "Viewer" = "Admin",
+  allowedTabs?: string[],
+  canWrite: boolean = true,
+  fullName?: string
+): Promise<AdminOperatorRecord> {
+  return saveAdminOperator({
+    email,
+    fullName,
+    passwordInput,
+    role: role === "Viewer" ? "Viewer (Read Only)" : role,
+    allowedTabs,
+    canWrite,
+    status: "Active"
   });
-
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData?.error || "Failed to register operator credential on server.");
-  }
 }
 
 export interface NewsletterSubscriber {
@@ -4417,6 +4730,9 @@ export interface PlatformUser {
   verificationAttempts?: number;
   lastVerificationEmail?: string | null;
   lastLogin?: string | null;
+  allowedTabs?: string[];
+  canWrite?: boolean;
+  passwordDigest?: string;
 }
 
 export async function getPlatformUsers(): Promise<PlatformUser[]> {

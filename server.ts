@@ -117,10 +117,13 @@ function isMasterAdminPassword(candidate: string): boolean {
   return false;
 }
 
-const adminCredentialStore = new Map<string, { salt: string; hash: string; role: string }>();
+const adminCredentialStore = new Map<
+  string,
+  { salt: string; hash: string; role: string; allowedTabs?: string[]; canWrite?: boolean; fullName?: string }
+>();
 for (const email of ANCHOR_SUPER_ADMINS) {
   const { salt, hash } = hashPasswordScrypt(defaultMasterPassword);
-  adminCredentialStore.set(email, { salt, hash, role: "Super Admin" });
+  adminCredentialStore.set(email, { salt, hash, role: "Super Admin", canWrite: true });
 }
 
 // Brute-force lockout tracker per IP + Email
@@ -128,14 +131,26 @@ const loginAttemptStore = new Map<string, { failedCount: number; lockoutUntil: n
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-function signAdminSessionToken(email: string, role: string): { token: string; expiresAt: number } {
+function signAdminSessionToken(
+  email: string,
+  role: string,
+  allowedTabs?: string[],
+  canWrite?: boolean
+): { token: string; expiresAt: number } {
   const expiresAt = Date.now() + SESSION_TTL_MS;
-  const payload = Buffer.from(JSON.stringify({ email, role, expiresAt })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ email, role, allowedTabs, canWrite, expiresAt })).toString("base64url");
   const signature = crypto.createHmac("sha256", ADMIN_TOKEN_SECRET).update(payload).digest("base64url");
   return { token: `${payload}.${signature}`, expiresAt };
 }
 
-function verifyAdminSessionToken(token?: string): { valid: boolean; email?: string; role?: string; expiresAt?: number } {
+function verifyAdminSessionToken(token?: string): {
+  valid: boolean;
+  email?: string;
+  role?: string;
+  allowedTabs?: string[];
+  canWrite?: boolean;
+  expiresAt?: number;
+} {
   if (!token || typeof token !== "string" || !token.includes(".")) {
     return { valid: false };
   }
@@ -158,6 +173,8 @@ function verifyAdminSessionToken(token?: string): { valid: boolean; email?: stri
       valid: true,
       email: decoded.email,
       role: decoded.role,
+      allowedTabs: decoded.allowedTabs,
+      canWrite: decoded.canWrite,
       expiresAt: decoded.expiresAt
     };
   } catch {
@@ -207,16 +224,21 @@ app.post("/api/admin/login", async (req, res) => {
     const now = Date.now();
 
     let matchedRole: string | null = null;
+    let matchedAllowedTabs: string[] | undefined = undefined;
+    let matchedCanWrite: boolean | undefined = undefined;
 
     // 1. Check in-memory server store first
     const memRecord = adminCredentialStore.get(rawEmail);
     if (memRecord && verifyPasswordScrypt(rawPassword, memRecord.salt, memRecord.hash)) {
       matchedRole = memRecord.role;
+      matchedAllowedTabs = memRecord.allowedTabs;
+      matchedCanWrite = memRecord.canWrite;
     }
 
     // 2. Check master admin password hash (RMAAdmin2026)
     if (!matchedRole && isMasterAdminPassword(rawPassword)) {
       matchedRole = "Super Admin";
+      matchedCanWrite = true;
     }
 
     const existingAttempt = loginAttemptStore.get(attemptKey);
@@ -246,13 +268,39 @@ app.post("/api/admin/login", async (req, res) => {
         const snap = await getDoc(doc(db, "admins", rawEmail));
         if (snap.exists()) {
           const data = snap.data();
-          if (data?.passwordHash && data?.passwordSalt) {
-            if (verifyPasswordScrypt(rawPassword, data.passwordSalt, data.passwordHash)) {
-              matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : (data.role || "Admin");
+          if (data?.status === "Suspended") {
+            return res.status(403).json({
+              error: "Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin)."
+            });
+          }
+          const candidateDigest = crypto
+            .createHash("sha256")
+            .update(`rma_sovereign_salt_2026_v1:${rawPassword}`)
+            .digest("hex");
+          const candidateLowerDigest = crypto
+            .createHash("sha256")
+            .update(`rma_sovereign_salt_2026_v1:${rawPassword.toLowerCase()}`)
+            .digest("hex");
+
+          const scryptMatch =
+            data?.passwordHash &&
+            data?.passwordSalt &&
+            verifyPasswordScrypt(rawPassword, data.passwordSalt, data.passwordHash);
+          const digestMatch =
+            data?.passwordDigest &&
+            (data.passwordDigest === candidateDigest || data.passwordDigest === candidateLowerDigest);
+
+          if (scryptMatch || digestMatch) {
+            matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : (data.role || "Admin");
+            matchedAllowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
+            matchedCanWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
+            if (data.passwordSalt && data.passwordHash) {
               adminCredentialStore.set(rawEmail, {
                 salt: data.passwordSalt,
                 hash: data.passwordHash,
-                role: matchedRole
+                role: matchedRole,
+                allowedTabs: matchedAllowedTabs,
+                canWrite: matchedCanWrite
               });
             }
           }
@@ -285,16 +333,20 @@ app.post("/api/admin/login", async (req, res) => {
     loginAttemptStore.delete(attemptKey);
     loginAttemptStore.delete(ipOnlyKey);
 
-    const { token, expiresAt } = signAdminSessionToken(rawEmail, matchedRole);
+    const { token, expiresAt } = signAdminSessionToken(rawEmail, matchedRole, matchedAllowedTabs, matchedCanWrite);
     return res.json({
       success: true,
       email: rawEmail,
       role: matchedRole,
+      allowedTabs: matchedAllowedTabs,
+      canWrite: matchedCanWrite,
       token,
       expiresAt,
       user: {
         username: rawEmail,
         role: matchedRole,
+        allowedTabs: matchedAllowedTabs,
+        canWrite: matchedCanWrite,
         token,
         expiresAt
       }
@@ -317,10 +369,14 @@ app.post("/api/admin/verify", (req, res) => {
     valid: true,
     email: result.email,
     role: result.role,
+    allowedTabs: result.allowedTabs,
+    canWrite: result.canWrite,
     expiresAt: result.expiresAt,
     user: {
       username: result.email,
       role: result.role,
+      allowedTabs: result.allowedTabs,
+      canWrite: result.canWrite,
       expiresAt: result.expiresAt
     }
   });
@@ -335,18 +391,30 @@ app.post("/api/admin/exchange-oauth-session", async (req, res) => {
     }
 
     let resolvedRole: string | null = null;
+    let allowedTabs: string[] | undefined = undefined;
+    let canWrite: boolean | undefined = undefined;
+
     if (ANCHOR_SUPER_ADMINS.has(rawEmail)) {
       resolvedRole = "Super Admin";
+      canWrite = true;
     } else {
       const memRecord = adminCredentialStore.get(rawEmail);
       if (memRecord) {
         resolvedRole = memRecord.role;
+        allowedTabs = memRecord.allowedTabs;
+        canWrite = memRecord.canWrite;
       } else {
         const db = getServerFirestore();
         if (db) {
           const snap = await getDoc(doc(db, "admins", rawEmail));
           if (snap.exists() && snap.data()?.role) {
-            resolvedRole = snap.data().role;
+            const data = snap.data();
+            if (data.status === "Suspended") {
+              return res.status(403).json({ error: "Your administrator account has been suspended by the Super Admin." });
+            }
+            resolvedRole = data.role;
+            allowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
+            canWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
           }
         }
       }
@@ -356,16 +424,20 @@ app.post("/api/admin/exchange-oauth-session", async (req, res) => {
       return res.status(403).json({ error: "Account is not authorized for administrative console access." });
     }
 
-    const { token, expiresAt } = signAdminSessionToken(rawEmail, resolvedRole);
+    const { token, expiresAt } = signAdminSessionToken(rawEmail, resolvedRole, allowedTabs, canWrite);
     return res.json({
       success: true,
       email: rawEmail,
       role: resolvedRole,
+      allowedTabs,
+      canWrite,
       token,
       expiresAt,
       user: {
         username: rawEmail,
         role: resolvedRole,
+        allowedTabs,
+        canWrite,
         token,
         expiresAt
       }
@@ -391,8 +463,18 @@ app.post("/api/admin/change-password", async (req, res) => {
     }
 
     const { salt, hash } = hashPasswordScrypt(newPassword);
+    const passwordDigest = crypto
+      .createHash("sha256")
+      .update(`rma_sovereign_salt_2026_v1:${newPassword}`)
+      .digest("hex");
     const role = ANCHOR_SUPER_ADMINS.has(session.email) ? "Super Admin" : (session.role || "Admin");
-    adminCredentialStore.set(session.email, { salt, hash, role });
+    adminCredentialStore.set(session.email, {
+      salt,
+      hash,
+      role,
+      allowedTabs: session.allowedTabs,
+      canWrite: session.canWrite
+    });
 
     const db = getServerFirestore();
     if (db) {
@@ -400,6 +482,7 @@ app.post("/api/admin/change-password", async (req, res) => {
         email: session.email,
         passwordSalt: salt,
         passwordHash: hash,
+        passwordDigest,
         role,
         updatedAt: new Date().toISOString()
       }, { merge: true });
@@ -411,37 +494,64 @@ app.post("/api/admin/change-password", async (req, res) => {
   }
 });
 
-// Register New Admin Operator Endpoint (Super Admin Only)
+// Register New Admin Operator Endpoint (STRICTLY SUPER ADMIN ONLY)
 app.post("/api/admin/register-operator", async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : req.body?.token;
     const session = verifyAdminSessionToken(token);
-    if (!session.valid || (session.role !== "Super Admin" && session.role !== "Admin")) {
-      return res.status(403).json({ error: "Only authorized Super Administrators can register new operators." });
+    const isCallerSuperAdmin =
+      session.valid &&
+      (session.role === "Super Admin" || (session.email && ANCHOR_SUPER_ADMINS.has(session.email)));
+
+    if (!isCallerSuperAdmin) {
+      return res.status(403).json({
+        error: "Access Denied: Only the System Owner (Super Admin) is authorized to create or modify Admin accounts."
+      });
     }
 
     const targetEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const targetFullName = typeof req.body?.fullName === "string" ? req.body.fullName.trim() : targetEmail.split("@")[0];
     const targetPassword = typeof req.body?.password === "string" ? req.body.password.trim() : "";
     const targetRole = typeof req.body?.role === "string" ? req.body.role : "Admin";
+    const allowedTabs = Array.isArray(req.body?.allowedTabs) ? req.body.allowedTabs : undefined;
+    const canWrite = typeof req.body?.canWrite === "boolean" ? req.body.canWrite : true;
 
     if (!targetEmail || targetPassword.length < 8) {
       return res.status(400).json({ error: "Valid email and strong password (8+ chars) are required." });
     }
 
     const { salt, hash } = hashPasswordScrypt(targetPassword);
+    const passwordDigest = crypto
+      .createHash("sha256")
+      .update(`rma_sovereign_salt_2026_v1:${targetPassword}`)
+      .digest("hex");
     const finalRole = ANCHOR_SUPER_ADMINS.has(targetEmail) ? "Super Admin" : targetRole;
-    adminCredentialStore.set(targetEmail, { salt, hash, role: finalRole });
+    adminCredentialStore.set(targetEmail, {
+      salt,
+      hash,
+      role: finalRole,
+      allowedTabs,
+      canWrite,
+      fullName: targetFullName
+    });
 
     const db = getServerFirestore();
     if (db) {
       await setDoc(doc(db, "admins", targetEmail), {
         email: targetEmail,
+        fullName: targetFullName,
         passwordSalt: salt,
         passwordHash: hash,
+        passwordDigest,
         role: finalRole,
-        createdAt: new Date().toISOString()
-      });
+        allowedTabs,
+        canWrite,
+        status: "Active",
+        createdBy: session.email || "olosundelouis@gmail.com",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
     }
 
     return res.json({ success: true });
