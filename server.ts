@@ -59,7 +59,10 @@ const PORT = 3000;
 // --------------------------------------------------
 // SERVER-SIDE ADMIN SECURITY & AUTHENTICATION ENGINE
 // --------------------------------------------------
-const ADMIN_TOKEN_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const ADMIN_TOKEN_SECRET =
+  process.env.ADMIN_SESSION_SECRET ||
+  process.env.ADMIN_TOKEN_SECRET ||
+  crypto.createHash("sha256").update("rma-hub-sovereign-hmac-key-2026").digest("hex");
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 const ANCHOR_SUPER_ADMINS = new Set([
