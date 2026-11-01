@@ -590,28 +590,31 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
 
       // 1B. Check Operator Accounts created by Super Admin (Firestore + Local Storage + Master Key)
       if (!serverSession) {
-        const operatorAuth = await authenticateOperatorAccount(cleanEmail, cleanPass);
-        if (operatorAuth.authenticated && operatorAuth.operator) {
-          const op = operatorAuth.operator;
-          const clientSigned = await createClientSignedSession(
-            op.email,
-            op.role,
-            op.allowedTabs,
-            op.canWrite
-          );
-          serverSession = {
-            email: op.email,
-            fullName: op.fullName,
-            role: op.role,
-            allowedTabs: (op.allowedTabs as AdminTabType[]) || undefined,
-            canWrite: op.canWrite !== false,
-            token: clientSigned.token,
-            expiresAt: clientSigned.expiresAt
-          };
-          serverLockoutSeconds = 0;
-          serverErrorMsg = "";
-        } else if (operatorAuth.error && operatorAuth.error.includes("suspended")) {
-          throw new Error(operatorAuth.error);
+        try {
+          const operatorAuth = await authenticateOperatorAccount(cleanEmail, cleanPass);
+          if (operatorAuth && operatorAuth.email) {
+            const clientSigned = await createClientSignedSession(
+              operatorAuth.email,
+              operatorAuth.role,
+              operatorAuth.allowedTabs,
+              operatorAuth.canWrite
+            );
+            serverSession = {
+              email: operatorAuth.email,
+              fullName: operatorAuth.fullName,
+              role: operatorAuth.role,
+              allowedTabs: (operatorAuth.allowedTabs as AdminTabType[]) || undefined,
+              canWrite: operatorAuth.canWrite !== false,
+              token: clientSigned.token,
+              expiresAt: clientSigned.expiresAt
+            };
+            serverLockoutSeconds = 0;
+            serverErrorMsg = "";
+          }
+        } catch (opErr: any) {
+          if (opErr?.message && opErr.message.toLowerCase().includes("suspended")) {
+            throw opErr;
+          }
         }
       }
 
@@ -2640,6 +2643,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             {/* Tab: Dashboard Overview */}
             {activeTab === "dashboard" && (
               <DashboardOverview
+                key="dashboard"
                 registrations={registrations}
                 visitorCheckins={visitorCheckins}
                 isSuperAdmin={isSuperAdmin}
@@ -2661,6 +2665,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             {/* Tab: Corper Impact Initiative (CII) Registry */}
             {activeTab === "reg-cii" && (
               <DatatableView
+                key="reg-cii"
                 registrations={registrations.filter(reg => reg.profileType?.startsWith("cii"))}
                 filteredRegistrations={filteredRegistrations.filter(reg => reg.profileType?.startsWith("cii"))}
                 searchQuery={searchQuery}
@@ -2696,6 +2701,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             {/* Tab: Right-Minds Africa (RMA) Registry */}
             {activeTab === "reg-rma" && (
               <DatatableView
+                key="reg-rma"
                 registrations={registrations.filter(reg => !reg.profileType?.startsWith("cii"))}
                 filteredRegistrations={filteredRegistrations.filter(reg => !reg.profileType?.startsWith("cii"))}
                 searchQuery={searchQuery}
@@ -2731,6 +2737,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             {/* Tab: Live Visitors monitoring tool */}
             {activeTab === "visitors-live" && (
               <AdminVisitorMonitoring
+                key="visitors-live"
                 visitorCheckins={visitorCheckins}
               />
             )}
@@ -2738,6 +2745,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             {/* Tab: Web Analytics interactive data tables */}
             {activeTab === "visitors-analytics" && (
               <AdminAnalytics 
+                key="visitors-analytics"
                 registrations={registrations} 
                 visitorCheckins={visitorCheckins}
                 activeProfileFilter={selectedProfileFilter}
@@ -2762,6 +2770,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             {/* Tab: Platform User List and Action Provisioning */}
             {activeTab === "user-management" && (
               <AdminUserManagement
+                key="user-management"
                 hasWriteAccess={hasWriteAccess}
                 isSuperAdmin={isSuperAdmin}
                 currentAdminEmail={currentEmail}
@@ -2988,25 +2997,25 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
-                              {ADMIN_MODULE_GROUPS.map((group) => {
+                              {ADMIN_MODULE_GROUPS.map((group, groupIdx) => {
                                 const assignableItems = group.items.filter((i) => !i.superAdminOnly);
                                 if (assignableItems.length === 0) return null;
                                 return (
                                   <div
-                                    key={group.group}
+                                    key={group.title || `group-${groupIdx}`}
                                     className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-2"
                                   >
                                     <div className="flex items-center justify-between border-b border-slate-100 pb-1">
                                       <span className="text-[10px] font-black uppercase tracking-wider text-[#103D2E]">
-                                        {group.group}
+                                        {group.title}
                                       </span>
                                     </div>
                                     <div className="space-y-1.5">
-                                      {assignableItems.map((mod) => {
+                                      {assignableItems.map((mod, modIdx) => {
                                         const checked = newAdminAllowedTabs.includes(mod.id);
                                         return (
                                           <label
-                                            key={mod.id}
+                                            key={mod.id || `mod-${modIdx}`}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs cursor-pointer transition ${
                                               checked
                                                 ? "bg-emerald-50/70 text-[#103D2E] font-bold"
@@ -3329,8 +3338,8 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
                               <td colSpan={4} className="py-12 text-center text-slate-404">No transaction logs recorded inside this cache.</td>
                             </tr>
                           ) : (
-                            auditLogs.map((lg) => (
-                              <tr key={lg.id} className="hover:bg-slate-20/20 transition-all">
+                            auditLogs.map((lg, idx) => (
+                              <tr key={lg.id || `${lg.timestamp}-${idx}`} className="hover:bg-slate-20/20 transition-all">
                                 <td className="py-3 px-6 text-[#103D2E] font-extrabold">{lg.adminEmail}</td>
                                 <td className="py-3 px-6 font-bold">{lg.action}</td>
                                 <td className="py-3 px-6 text-slate-500 font-sans max-w-[280px] truncate" title={lg.details}>{lg.details}</td>

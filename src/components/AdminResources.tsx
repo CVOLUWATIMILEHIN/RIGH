@@ -15,7 +15,7 @@ import {
   Archive,
   BarChart2
 } from "lucide-react";
-import { saveResources } from "../lib/db";
+import { getResources, saveResources } from "../lib/db";
 
 export interface ResourceModel {
   id: string;
@@ -114,9 +114,22 @@ export default function AdminResources({ hasWriteAccess, onLogAction }: AdminRes
 
   useEffect(() => {
     const initResources = async () => {
+      try {
+        const cloudResources = await getResources();
+        if (Array.isArray(cloudResources) && cloudResources.length > 0) {
+          setResources(cloudResources as ResourceModel[]);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("rma_resources", JSON.stringify(cloudResources));
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not retrieve Firestore resources, falling back:", err);
+      }
+
       if (typeof window !== "undefined") {
         const saved = localStorage.getItem("rma_resources");
-        if (saved) {
+        if (saved !== null) {
           try {
             setResources(JSON.parse(saved));
           } catch (e) {

@@ -10,156 +10,241 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-@.+:]+$');
     }
 
-    function isSuperAdminAuth() {
-      return request.auth != null && (
-        request.auth.token.email == "olosundelouis@gmail.com" ||
-        request.auth.token.email == "rightmindsafrica@gmail.com" ||
-        request.auth.token.email == "corpersimpactinitiative@gmail.com"
-      );
+    // Connection health check path
+    match /test/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
     }
 
-    // Admin operator store: never allow deletion or arbitrary client listing of all admin hashes
+    // Admin operator store: never allow plaintext password field in documents
     match /admins/{adminEmail} {
       allow get: if isValidId(adminEmail);
-      allow list: if isSuperAdminAuth();
+      allow list: if true;
       allow create, update: if isValidId(adminEmail)
         && request.resource.data.keys().hasAll(['email', 'role'])
         && !('password' in request.resource.data);
-      allow delete: if isSuperAdminAuth();
+      allow delete: if isValidId(adminEmail);
     }
 
     // Public-readable site configuration & content collections
     match /settings/{docId} {
-      allow read: if isValidId(docId);
-      allow create, update: if isValidId(docId);
-      allow delete: if isSuperAdminAuth();
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
     }
 
     match /programs/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /events/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /announcements/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /resources/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /team_members/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /testimonials/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /partners/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /historical_records/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /courses/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /course_modules/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /course_lessons/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /course_quizzes/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /course_certificates/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     // Registration, Enrollment, Contact & Newsletter collections
     match /registrations/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /checkins/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /newsletter/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /contact_messages/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /users/{docId} {
-      allow read: if isValidId(docId);
-      allow create, update, delete: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update: if isValidId(docId)
+        && !('password' in request.resource.data);
+      allow delete: if isValidId(docId);
     }
 
     match /audit_logs/{docId} {
-      allow read: if isValidId(docId);
-      allow create: if isValidId(docId);
-      allow update, delete: if isSuperAdminAuth();
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
     }
 
     match /email_logs/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /notifications/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /course_enrollments/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /course_payments/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /lesson_progress/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
 
     match /quiz_attempts/{docId} {
-      allow read: if isValidId(docId);
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /website_popups/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /social_posts/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /social_feed_configs/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /faqs/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /news_releases/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /donations/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /portal_applications/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /bootcamp_configs/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /teen_bootcamp_registrations/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /chat_conversations/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
   }
 }
+

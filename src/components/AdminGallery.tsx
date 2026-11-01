@@ -15,7 +15,7 @@ import {
   UploadCloud
 } from "lucide-react";
 import { GALLERY_ITEMS, GalleryItem } from "../types";
-import { saveGallery } from "../lib/db";
+import { getGallery, saveGallery } from "../lib/db";
 import { 
   saveGalleryItemToSupabase, 
   deleteGalleryItemFromSupabase, 
@@ -62,9 +62,21 @@ export default function AdminGallery({ hasWriteAccess, onLogAction }: AdminGalle
         }
       } catch (err) {}
 
+      // 2. Fetch from Firestore cloud settings before falling back to local defaults
+      try {
+        const cloudGallery = await getGallery();
+        if (Array.isArray(cloudGallery) && cloudGallery.length > 0) {
+          setGallery(cloudGallery as GalleryItem[]);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(RUNTIME_ALBUM_KEY, JSON.stringify(cloudGallery));
+          }
+          return;
+        }
+      } catch (err) {}
+
       if (typeof window !== "undefined") {
         const saved = localStorage.getItem(RUNTIME_ALBUM_KEY);
-        if (saved) {
+        if (saved !== null) {
           try {
             setGallery(JSON.parse(saved));
           } catch (e) {

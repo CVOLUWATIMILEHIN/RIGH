@@ -23,7 +23,7 @@ import {
   Settings,
   ArrowRight
 } from "lucide-react";
-import { getWebsitePopups, saveWebsitePopup, deleteWebsitePopup, saveEvents } from "../lib/db";
+import { getWebsitePopups, saveWebsitePopup, deleteWebsitePopup, getEvents, saveEvents } from "../lib/db";
 import { saveEventToSupabase, deleteEventFromSupabase, fetchAllCMSFromSupabase } from "../lib/supabaseCms";
 import { uploadImageToSupabase, isSupabaseConfigured } from "../lib/supabase";
 import { WebsitePopup } from "../types";
@@ -162,16 +162,29 @@ export default function AdminEvents({ hasWriteAccess, onLogAction }: AdminEvents
         console.warn("Could not retrieve Supabase events, falling back:", err);
       }
 
+      // 2. Fetch from Firestore cloud settings before falling back to local defaults
+      try {
+        const cloudEvents = await getEvents();
+        if (Array.isArray(cloudEvents) && cloudEvents.length > 0) {
+          setEvents(cloudEvents as EventModel[]);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("rma_events", JSON.stringify(cloudEvents));
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not retrieve Firestore events, falling back:", err);
+      }
+
       if (typeof window !== "undefined") {
         const saved = localStorage.getItem("rma_events");
-        if (saved) {
+        if (saved !== null) {
           try {
             setEvents(JSON.parse(saved));
           } catch (e) {
             setEvents(DEFAULT_EVENTS);
           }
         } else {
-          // No events locally, seed defaults to cloud settings
           await saveEvents(DEFAULT_EVENTS);
           setEvents(DEFAULT_EVENTS);
         }

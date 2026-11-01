@@ -62,6 +62,7 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
   
   // Interactive mini syllabus creation
   const [modules, setModules] = useState<LMSModule[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCourses();
@@ -224,16 +225,14 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
   };
 
   const handleDeleteCourse = async (id: string, name: string) => {
-    if (!window.confirm(`Are you absolutely sure you want to delete course "${name}"? This action cannot be undone.`)) {
-      return;
-    }
-
     try {
+      setConfirmDeleteId(null);
+      setCourses((prev) => prev.filter((c) => c.id !== id));
       await deleteCourse(id);
-      onNotify(`Course "${name}" deleted.`, "success");
-      fetchCourses();
+      onNotify(`Course "${name}" permanently deleted.`, "success");
+      await fetchCourses();
     } catch (e) {
-      onNotify("Failed to delete", "error");
+      onNotify("Failed to delete course", "error");
     }
   };
 
@@ -340,13 +339,33 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
                   <Edit3 size={13} />
                 </button>
 
-                <button
-                  onClick={() => handleDeleteCourse(course.id, course.title)}
-                  className="p-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-rose-500 hover:bg-rose-500/15 cursor-pointer"
-                  title="Delete Course Permanently"
-                >
-                  <Trash2 size={13} />
-                </button>
+                {confirmDeleteId === course.id ? (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCourse(course.id, course.title)}
+                      className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-wider cursor-pointer"
+                    >
+                      Confirm Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="px-2 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 text-[10px] font-bold uppercase cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteId(course.id)}
+                    className="p-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-rose-500 hover:bg-rose-500/15 cursor-pointer"
+                    title="Delete Course Permanently"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
 
             </div>

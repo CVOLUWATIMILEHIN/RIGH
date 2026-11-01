@@ -226,11 +226,7 @@ async function handleFirestoreError(error: unknown, operationType: OperationType
 
   const isApiDisabled = 
     errText.includes("Cloud Firestore API has not been used") || 
-    errText.includes("firestore.googleapis.com") ||
-    errText.includes("PERMISSION_DENIED") ||
-    errText.includes("NOT_FOUND") ||
-    errText.includes("5 NOT_FOUND") ||
-    ((error as any)?.code === "not-found" || (error as any)?.code === "permission-denied" || (error as any)?.code === 5 || (error as any)?.code === 7);
+    errText.includes("firestore.googleapis.com");
 
   if (isApiDisabled) {
     if (typeof window !== "undefined") {
@@ -245,8 +241,19 @@ async function handleFirestoreError(error: unknown, operationType: OperationType
         disableNetwork(cachedDb).catch(() => null);
       }).catch(() => null);
     }
-    console.warn("Cloud Firestore API or Database is currently disabled, not found, or pending creation in Google Cloud Project.");
-    return; // Suppress rethrowing to prevent breaking offline execution
+    console.warn("Cloud Firestore API is currently disabled in Google Cloud Project.");
+    return;
+  }
+
+  const isPermissionOrNotFound =
+    errText.includes("PERMISSION_DENIED") ||
+    errText.includes("NOT_FOUND") ||
+    errText.includes("5 NOT_FOUND") ||
+    ((error as any)?.code === "not-found" || (error as any)?.code === "permission-denied" || (error as any)?.code === 5 || (error as any)?.code === 7);
+
+  if (isPermissionOrNotFound) {
+    console.warn(`Firestore operation [${operationType}] on path [${path}] returned permission/not-found:`, errText);
+    return;
   }
 
   // Log non-fatal error into audit_logs collection if possible
@@ -444,11 +451,7 @@ async function processQueue() {
     const errText = error instanceof Error ? error.message : String(error);
     const isApiDisabled = 
       errText.includes("Cloud Firestore API has not been used") || 
-      errText.includes("firestore.googleapis.com") ||
-      errText.includes("PERMISSION_DENIED") ||
-      errText.includes("NOT_FOUND") ||
-      errText.includes("5 NOT_FOUND") ||
-      (error && (error.code === "not-found" || error.code === "permission-denied" || error.code === 5 || error.code === 7));
+      errText.includes("firestore.googleapis.com");
 
     if (isApiDisabled) {
       if (typeof window !== "undefined") {
@@ -460,7 +463,7 @@ async function processQueue() {
         const db = await getFirestoreDb();
         await disableNetwork(db).catch(() => null);
       } catch (e) {}
-      console.warn("Cloud Firestore API or Database not yet created on project. Data saved locally to browser cache.");
+      console.warn("Cloud Firestore API not enabled on project. Data saved locally to browser cache.");
       // Resolve all queued jobs cleanly using local offline storage
       for (const job of currentBatchJobs) {
         job.resolve(job.data);
@@ -2924,20 +2927,33 @@ export const DEFAULT_LMS_COURSES: LMSCourse[] = [
   }
 ];
 
-// Initialize Course seeds in localStorage if not exists
+function getDeletedCourseIdsLocal(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem("rma_deleted_course_ids");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+function saveDeletedCourseIdsLocal(ids: string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const unique = Array.from(new Set(ids));
+    localStorage.setItem("rma_deleted_course_ids", JSON.stringify(unique));
+  } catch (e) {}
+}
+
+// Initialize Course seeds in localStorage only if never initialized before
 if (typeof window !== "undefined") {
   const existingCourses = localStorage.getItem("rma_lms_courses");
-  if (!existingCourses) {
-    localStorage.setItem("rma_lms_courses", JSON.stringify(DEFAULT_LMS_COURSES));
-  } else {
-    try {
-      // Force addition of course-3 if missing in localStorage cache
-      const list: LMSCourse[] = JSON.parse(existingCourses);
-      if (!list.some(c => c.id === "course-3")) {
-        list.push(DEFAULT_LMS_COURSES[2]);
-        localStorage.setItem("rma_lms_courses", JSON.stringify(list));
-      }
-    } catch (e) {}
+  if (existingCourses === null) {
+    const deletedIds = new Set(getDeletedCourseIdsLocal());
+    const initialCourses = DEFAULT_LMS_COURSES.filter(c => !deletedIds.has(c.id));
+    localStorage.setItem("rma_lms_courses", JSON.stringify(initialCourses));
   }
 }
 
@@ -2945,78 +2961,72 @@ if (typeof window !== "undefined") {
 // Courses Database APIs
 // --------------------------------------------------
 export async function getCourses(): Promise<LMSCourse[]> {
+  let deletedIds = new Set<string>(getDeletedCourseIdsLocal());
   let list: LMSCourse[] = [];
+  let hasLocalSaved = false;
   if (typeof window !== "undefined") {
     try {
       const saved = localStorage.getItem("rma_lms_courses");
-      if (saved) {
-        list = JSON.parse(saved);
+      if (saved !== null) {
+        hasLocalSaved = true;
+        list = (JSON.parse(saved) as LMSCourse[]).filter(c => !deletedIds.has(c.id));
       }
     } catch (e) {}
   }
 
-  // Ensure course-3 is always present locally as a fallback
-  if (!list.some(c => c.id === "course-3")) {
-    const freshRef = DEFAULT_LMS_COURSES.find(c => c.id === "course-3");
-    if (freshRef) {
-      list.push(freshRef);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("rma_lms_courses", JSON.stringify(list));
-      }
-    }
-  }
-
   const fetchFs = async (): Promise<LMSCourse[]> => {
-    const { collection, getDocs, doc, setDoc } = await import("firebase/firestore");
+    const { collection, getDocs, doc, getDoc, setDoc } = await import("firebase/firestore");
     const db = await getFirestoreDb();
+
+    // Sync deleted course IDs from Firestore settings/deleted_courses
+    try {
+      const deletedSnap = await getDoc(doc(db, "settings", "deleted_courses"));
+      if (deletedSnap.exists()) {
+        const remoteDeleted = deletedSnap.data()?.ids;
+        if (Array.isArray(remoteDeleted)) {
+          remoteDeleted.forEach((id: string) => deletedIds.add(id));
+          saveDeletedCourseIdsLocal(Array.from(deletedIds));
+        }
+      }
+    } catch (e) {}
+
     const querySnapshot = await getDocs(collection(db, "courses"));
     const fbList: LMSCourse[] = [];
     querySnapshot.forEach((docSnap) => {
-      fbList.push({ id: docSnap.id, ...docSnap.data() } as LMSCourse);
+      if (!deletedIds.has(docSnap.id)) {
+        fbList.push({ id: docSnap.id, ...docSnap.data() } as LMSCourse);
+      }
     });
 
-    if (fbList.length > 0) {
-      // Auto-heal / seed missing course-3 or other default courses to Firestore
-      const fbIds = new Set(fbList.map(c => c.id));
-      const missingDefaults = DEFAULT_LMS_COURSES.filter(c => !fbIds.has(c.id));
-      
-      if (missingDefaults.length > 0) {
-        for (const c of missingDefaults) {
-          try {
-            await setDoc(doc(db, "courses", c.id), c);
-            fbList.push(c);
-          } catch (e) {
-            // Silently fallback if non-editor visitor lacks write permission
-            fbList.push(c);
-          }
-        }
-      }
-
+    if (fbList.length > 0 || deletedIds.size > 0) {
       if (typeof window !== "undefined") {
         localStorage.setItem("rma_lms_courses", JSON.stringify(fbList));
       }
       return fbList;
     } else {
-      // Return default courses if db is empty
-      for (const c of DEFAULT_LMS_COURSES) {
+      // Only seed default courses when Firestore is completely empty AND no courses have been deleted
+      const seedCourses = DEFAULT_LMS_COURSES.filter(c => !deletedIds.has(c.id));
+      for (const c of seedCourses) {
         try {
           await setDoc(doc(db, "courses", c.id), c);
-        } catch (e) {
-          // Silently fallback if non-editor visitor lacks write permission
-        }
+        } catch (e) {}
       }
       if (typeof window !== "undefined") {
-        localStorage.setItem("rma_lms_courses", JSON.stringify(DEFAULT_LMS_COURSES));
+        localStorage.setItem("rma_lms_courses", JSON.stringify(seedCourses));
       }
-      return DEFAULT_LMS_COURSES;
+      return seedCourses;
     }
   };
 
+  const fallbackCourses = hasLocalSaved
+    ? list.filter(c => !deletedIds.has(c.id))
+    : DEFAULT_LMS_COURSES.filter(c => !deletedIds.has(c.id));
+
   const fsTimeout = new Promise<LMSCourse[]>((resolve) =>
     setTimeout(() => {
-      console.warn("getCourses Firestore fetch timed out (2500ms), using local list");
-      resolve(list.length > 0 ? list : DEFAULT_LMS_COURSES);
-    }, 2500)
+      console.warn("getCourses Firestore fetch timed out (4000ms), using local list");
+      resolve(fallbackCourses);
+    }, 4000)
   );
 
   try {
@@ -3025,17 +3035,25 @@ export async function getCourses(): Promise<LMSCourse[]> {
     console.warn("Could not retrieve courses from Firestore, using local data:", err);
   }
 
-  return list.length > 0 ? list : DEFAULT_LMS_COURSES;
+  return fallbackCourses;
 }
 
 export async function saveCourse(course: LMSCourse): Promise<void> {
+  const deletedIds = getDeletedCourseIdsLocal().filter(id => id !== course.id);
+  saveDeletedCourseIdsLocal(deletedIds);
+
   if (typeof window !== "undefined") {
     try {
       const saved = localStorage.getItem("rma_lms_courses");
       let list: LMSCourse[] = saved ? JSON.parse(saved) : [];
-      list = list.filter(c => c.id !== course.id);
-      list.push(course);
+      const existingIdx = list.findIndex(c => c.id === course.id);
+      if (existingIdx >= 0) {
+        list[existingIdx] = course;
+      } else {
+        list.push(course);
+      }
       localStorage.setItem("rma_lms_courses", JSON.stringify(list));
+      window.dispatchEvent(new Event("rma_courses_updated"));
     } catch (e) {}
   }
 
@@ -3043,26 +3061,42 @@ export async function saveCourse(course: LMSCourse): Promise<void> {
     const { doc, setDoc } = await import("firebase/firestore");
     const db = await getFirestoreDb();
     await setDoc(doc(db, "courses", course.id), course);
-  } catch (err) {}
+    await setDoc(doc(db, "settings", "deleted_courses"), {
+      ids: deletedIds,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Failed to sync saved course to Firestore:", err);
+  }
 }
 
 export async function deleteCourse(id: string): Promise<void> {
+  const deletedIds = Array.from(new Set([...getDeletedCourseIdsLocal(), id]));
+  saveDeletedCourseIdsLocal(deletedIds);
+
   if (typeof window !== "undefined") {
     try {
       const saved = localStorage.getItem("rma_lms_courses");
-      if (saved) {
-        let list: LMSCourse[] = JSON.parse(saved);
-        list = list.filter(c => c.id !== id);
-        localStorage.setItem("rma_lms_courses", JSON.stringify(list));
-      }
+      let list: LMSCourse[] = saved ? JSON.parse(saved) : [];
+      list = list.filter(c => c.id !== id);
+      localStorage.setItem("rma_lms_courses", JSON.stringify(list));
+      window.dispatchEvent(new Event("rma_courses_updated"));
     } catch (e) {}
   }
 
   try {
-    const { doc, deleteDoc } = await import("firebase/firestore");
+    const { doc, deleteDoc, setDoc } = await import("firebase/firestore");
     const db = await getFirestoreDb();
-    await deleteDoc(doc(db, "courses", id));
-  } catch (err) {}
+    await Promise.all([
+      deleteDoc(doc(db, "courses", id)),
+      setDoc(doc(db, "settings", "deleted_courses"), {
+        ids: deletedIds,
+        updatedAt: new Date().toISOString()
+      }, { merge: true })
+    ]);
+  } catch (err) {
+    console.warn("Failed to sync course deletion to Firestore:", err);
+  }
 }
 
 // --------------------------------------------------
