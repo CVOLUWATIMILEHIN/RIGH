@@ -20,6 +20,7 @@ import CheckInModal from "./components/CheckInModal";
 import VerifyEmailPage from "./components/VerifyEmailPage";
 import LiveChatWidget from "./components/LiveChatWidget";
 import { getMarqueeConfig, MarqueeConfig, DEFAULT_MARQUEE_CONFIG, subscribeToRealtimeUpdates } from "./lib/db";
+import { useBrandConfig } from "./lib/brandConfig";
 
 function resolveViewFromUrl(): string {
   if (typeof window === "undefined") return "home";
@@ -131,6 +132,7 @@ function resolveViewFromUrl(): string {
 }
 
 export default function App() {
+  const { brand } = useBrandConfig();
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
   const [modalProfile, setModalProfile] = useState<string>("corps_member");
@@ -144,6 +146,21 @@ export default function App() {
     }
     return "light";
   });
+
+  useEffect(() => {
+    const iconHref = brand.logoUrl || "/favicon.png";
+    const rels = ["icon", "shortcut icon", "apple-touch-icon"];
+    rels.forEach((rel) => {
+      let link = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = rel;
+        link.type = "image/png";
+        document.head.appendChild(link);
+      }
+      link.href = iconHref;
+    });
+  }, [brand.logoUrl]);
 
   useEffect(() => {
     const root = window.document.documentElement;
