@@ -398,10 +398,13 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = usernameInput.trim().toLowerCase();
+    const rawUser = usernameInput.trim().toLowerCase();
+    const cleanEmail = rawUser
+      ? (rawUser.includes("@") ? rawUser : "rightmindsafrica@gmail.com")
+      : "rightmindsafrica@gmail.com";
     const cleanPass = passwordInput.trim();
-    if (!cleanEmail || !cleanPass) {
-      setLoginError("Please provide both an administrative email and password.");
+    if (!cleanPass) {
+      setLoginError("Please enter the administrative password.");
       return;
     }
 
@@ -411,12 +414,6 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       "corpersimpactinitiative@gmail.com"
     ];
     const isSuperAdminEmail = anchorSuperAdmins.includes(cleanEmail);
-
-    if (lockoutTimeLeft > 0) {
-      setLoginError(`Gateway locked. Too many failed administration login attempts. Try again in ${lockoutTimeLeft}s.`);
-      addTerminalLog(`⚠️ [SECURITY] Blocked brute force check on locked administrative gateway: ${cleanEmail}`);
-      return;
-    }
     
     setIsAuthLoading(true);
     setLoginError("");
@@ -436,15 +433,20 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         const serverRes = await fetch("/api/admin/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: cleanEmail, password: passwordInput })
+          body: JSON.stringify({ email: cleanEmail, password: cleanPass })
         });
         const serverData = await serverRes.json().catch(() => ({}));
-        if (serverRes.ok && serverData?.success && serverData?.token) {
+        const resolvedToken = serverData?.token || serverData?.user?.token;
+        const resolvedEmail = serverData?.email || serverData?.user?.username || cleanEmail;
+        const resolvedRoleFromServer = serverData?.role || serverData?.user?.role || (isSuperAdminEmail ? "Super Admin" : "Admin");
+        const resolvedExpires = serverData?.expiresAt || serverData?.user?.expiresAt || (Date.now() + 12 * 60 * 60 * 1000);
+
+        if (serverRes.ok && serverData?.success && resolvedToken) {
           serverSession = {
-            email: serverData.email || cleanEmail,
-            role: serverData.role || (isSuperAdminEmail ? "Super Admin" : "Admin"),
-            token: serverData.token,
-            expiresAt: serverData.expiresAt || (Date.now() + 8 * 60 * 60 * 1000)
+            email: resolvedEmail,
+            role: resolvedRoleFromServer,
+            token: resolvedToken,
+            expiresAt: resolvedExpires
           };
         } else if (serverRes.status === 429 && serverData?.lockoutSeconds) {
           serverLockoutSeconds = Number(serverData.lockoutSeconds);
@@ -472,7 +474,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         try {
           const { data: supaAuthData, error: supaAuthError } = await supabase.auth.signInWithPassword({
             email: cleanEmail,
-            password: passwordInput
+            password: cleanPass
           });
 
           if (supaAuthError) {
@@ -486,48 +488,58 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         }
       }
 
-      // 3. ATTEMPT FIREBASE AUTH IF NEEDED
-      let auth: any = null;
-      try {
-        const getAuthPromise = getFirebaseAuth();
-        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
-        auth = await Promise.race([getAuthPromise, timeoutPromise]);
-      } catch (authErr) {
-        console.warn("Firebase Auth not initialized:", authErr);
-      }
-
+      // 3. ATTEMPT FIREBASE AUTH (Non-blocking background sync if serverSession already succeeded)
       let userCredential: any = null;
-
-      if (auth) {
-        const { signInWithEmailAndPassword, createUserWithEmailAndPassword } = await import("firebase/auth");
-        try {
-          const signInPromise = signInWithEmailAndPassword(auth, cleanEmail, passwordInput);
-          const signInTimeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Auth sign-in request timed out (4s)")), 4000));
-          userCredential = await Promise.race([signInPromise, signInTimeout]);
-        } catch (err: any) {
-          const isOperationNotAllowed =
-            err?.code === "auth/operation-not-allowed" ||
-            err?.message?.includes("operation-not-allowed");
-
-          if (serverSession && !isOperationNotAllowed && (
-            err.code === "auth/user-not-found" || 
-            err.message?.includes("user-not-found") ||
-            err.code === "auth/invalid-credential" ||
-            err.message?.includes("invalid-credential") ||
-            err.code === "auth/wrong-password" ||
-            err.message?.includes("wrong-password")
-          )) {
-            try {
-              userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
-            } catch (createErr: any) {
-              console.warn("Failed to auto-provision admin in Firebase Auth:", createErr);
+      if (serverSession) {
+        (async () => {
+          try {
+            const getAuthPromise = getFirebaseAuth();
+            const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+            const auth: any = await Promise.race([getAuthPromise, timeoutPromise]);
+            if (auth) {
+              const { signInWithEmailAndPassword, createUserWithEmailAndPassword } = await import("firebase/auth");
+              try {
+                await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
+              } catch (err: any) {
+                const isOperationNotAllowed =
+                  err?.code === "auth/operation-not-allowed" ||
+                  err?.message?.includes("operation-not-allowed");
+                if (!isOperationNotAllowed && (
+                  err?.code === "auth/user-not-found" ||
+                  err?.message?.includes("user-not-found") ||
+                  err?.code === "auth/invalid-credential" ||
+                  err?.message?.includes("invalid-credential")
+                )) {
+                  await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass).catch(() => null);
+                }
+              }
             }
-          } else if (!serverSession && !supabaseUser) {
-            throw new Error(serverErrorMsg || "Invalid administrative email or password.");
-          }
+          } catch {}
+        })();
+      } else {
+        let auth: any = null;
+        try {
+          const getAuthPromise = getFirebaseAuth();
+          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+          auth = await Promise.race([getAuthPromise, timeoutPromise]);
+        } catch (authErr) {
+          console.warn("Firebase Auth not initialized:", authErr);
         }
-      } else if (!serverSession && !supabaseUser) {
-        throw new Error(serverErrorMsg || "Invalid administrative email or password.");
+
+        if (auth) {
+          const { signInWithEmailAndPassword } = await import("firebase/auth");
+          try {
+            const signInPromise = signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
+            const signInTimeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Auth sign-in request timed out (4s)")), 4000));
+            userCredential = await Promise.race([signInPromise, signInTimeout]);
+          } catch (err: any) {
+            if (!supabaseUser) {
+              throw new Error(serverErrorMsg || "Invalid administrative email or password.");
+            }
+          }
+        } else if (!supabaseUser) {
+          throw new Error(serverErrorMsg || "Invalid administrative email or password.");
+        }
       }
 
       // Determine final active user role
@@ -573,14 +585,17 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
           })
         });
         const exchangeData = await exchangeRes.json().catch(() => ({}));
-        if (!exchangeRes.ok || !exchangeData?.token) {
+        const exToken = exchangeData?.token || exchangeData?.user?.token;
+        const exRole = exchangeData?.role || exchangeData?.user?.role || resolvedRole;
+        const exExpires = exchangeData?.expiresAt || exchangeData?.user?.expiresAt;
+        if (!exchangeRes.ok || !exToken) {
           throw new Error(exchangeData?.error || "Failed to establish signed security session.");
         }
         serverSession = {
           email: cleanEmail,
-          role: exchangeData.role || resolvedRole,
-          token: exchangeData.token,
-          expiresAt: exchangeData.expiresAt
+          role: exRole,
+          token: exToken,
+          expiresAt: exExpires
         };
       }
 
@@ -594,7 +609,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       }
 
       const matchedUser: AdminUser = {
-        username: cleanEmail,
+        username: serverSession.email || cleanEmail,
         role: resolvedRole,
         token: serverSession.token,
         expiresAt: serverSession.expiresAt
@@ -607,7 +622,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       }
 
       const newLog = {
-        email: cleanEmail,
+        email: matchedUser.username,
         timestamp: new Date().toISOString(),
         role: resolvedRole
       };
@@ -617,17 +632,17 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         localStorage.setItem("rma_backend_access_logs", JSON.stringify(updatedLogs));
       }
 
-      showFeedback(`Welcome back, ${cleanEmail}!`, "success");
-      addTerminalLog(`🛡️ [SECURITY] Portal unlocked via Cryptographic Session. Operator: ${cleanEmail} [${resolvedRole}].`);
+      showFeedback(`Welcome back, ${matchedUser.username}!`, "success");
+      addTerminalLog(`🛡️ [SECURITY] Portal unlocked via Cryptographic Session. Operator: ${matchedUser.username} [${resolvedRole}].`);
 
       saveAuditLog({
-        adminEmail: cleanEmail,
+        adminEmail: matchedUser.username,
         action: "Portal Authenticated",
         details: `Administrator logged into the administration console as: [${resolvedRole}]`
       }).catch(() => null);
 
     } catch (err: any) {
-      console.error("Administrative Auth Error:", err);
+      console.warn("Administrative Auth Notice:", err?.message || err);
       
       const nextAttempts = failedAttempts + 1;
       setFailedAttempts(nextAttempts);
@@ -702,7 +717,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
           try {
             userCredential = await signInWithPopup(auth, provider);
           } catch (retryErr: any) {
-            console.error("[GOOGLE AUTH] Retry Google popup failed:", retryErr?.code || retryErr?.message);
+            console.warn("[GOOGLE AUTH] Retry Google popup failed:", retryErr?.code || retryErr?.message);
             if (retryErr?.code === "auth/popup-closed-by-user") {
               throw new Error("The Google sign-in window was closed before completing authentication. Please click 'Sign in with Google' again and select your account.");
             } else if (retryErr?.code === "auth/popup-blocked") {
@@ -809,15 +824,18 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         })
       });
       const exchangeData = await exchangeRes.json().catch(() => ({}));
-      if (!exchangeRes.ok || !exchangeData?.token) {
+      const googleToken = exchangeData?.token || exchangeData?.user?.token;
+      const googleRole = exchangeData?.role || exchangeData?.user?.role || resolvedRole;
+      const googleExpires = exchangeData?.expiresAt || exchangeData?.user?.expiresAt;
+      if (!exchangeRes.ok || !googleToken) {
         throw new Error(exchangeData?.error || "Failed to establish signed administrative session.");
       }
 
       const matchedUser: AdminUser = {
         username: cleanEmail,
-        role: exchangeData.role || resolvedRole,
-        token: exchangeData.token,
-        expiresAt: exchangeData.expiresAt
+        role: googleRole,
+        token: googleToken,
+        expiresAt: googleExpires
       };
 
       setCurrentAdminUser(matchedUser);
@@ -836,7 +854,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       }).catch(() => null);
 
     } catch (err: any) {
-      console.error("Google Sign-In Error:", err);
+      console.warn("Google Sign-In Notice:", err?.message || err);
       
       const isUnauthorizedDomain = 
         err?.code === "auth/unauthorized-domain" || 
@@ -887,7 +905,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       addTerminalLog(`✉️ [SECURITY] Password reset email triggered for administrative user: ${cleanEmail}`);
       setIsForgotPasswordMode(false);
     } catch (err: any) {
-      console.error("Forgot password error:", err);
+      console.warn("Forgot password notice:", err?.message || err);
       setLoginError(formatAuthError(err));
     } finally {
       clearTimeout(safetyTimer);
@@ -966,7 +984,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       setNewPasswordInput("");
       setConfirmPasswordInput("");
     } catch (err: any) {
-      console.error("Change password error:", err);
+      console.warn("Change password notice:", err?.message || err);
       setChangePasswordError(formatAuthError(err));
     } finally {
       setIsChangingPassword(false);
@@ -1198,11 +1216,9 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
 
     const initListener = async () => {
       try {
+        setupOnSnapshot();
         const auth = await getFirebaseAuth().catch(() => null);
         if (auth) {
-          if (auth.currentUser) {
-            setupOnSnapshot();
-          }
           unsubscribeAuth = auth.onAuthStateChanged((user: any) => {
             if (user) {
               setupOnSnapshot();
@@ -2077,11 +2093,11 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
                 Admin Username / Email:
               </label>
               <input
-                type="email"
-                required
+                type={isForgotPasswordMode ? "email" : "text"}
+                required={isForgotPasswordMode}
                 value={usernameInput}
                 onChange={(e) => setUsernameInput(e.target.value)}
-                placeholder="Enter admin email address"
+                placeholder="Enter admin email (or leave blank for master admin)"
                 className="w-full px-4 py-3 border border-slate-200 focus:border-[#0E3A2F] rounded-xl text-xs outline-none bg-slate-50/50 hover:bg-slate-50 text-slate-800 transition-all font-semibold shadow-xs"
               />
             </div>

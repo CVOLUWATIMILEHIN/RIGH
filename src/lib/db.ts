@@ -1010,41 +1010,6 @@ export async function getRegistrations(forceFresh: boolean = false): Promise<Reg
   if (isOnline) {
     try {
       const auth = await getFirebaseAuth().catch(() => null);
-      
-      // Auto-restore Auth session if missing but we have standard cached admin user
-      if (auth && !auth.currentUser && typeof window !== "undefined") {
-        const savedUserRaw = localStorage.getItem("rma_current_logged_in_user");
-        const fallbackAdminsRaw = localStorage.getItem("rma_fallback_local_admins");
-        if (savedUserRaw) {
-          try {
-            const savedUser = JSON.parse(savedUserRaw);
-            const cleanEmail = savedUser.username?.trim().toLowerCase();
-            
-            const defaultPasswords: Record<string, string> = {
-              "olosundelouis@gmail.com": "RMA2026Admin",
-              "rightmindsafrica@gmail.com": "RMA2026Admin",
-              "corpersimpactinitiative@gmail.com": "RMA2026Admin"
-            };
-            
-            let passwordToUse = defaultPasswords[cleanEmail];
-            if (!passwordToUse && fallbackAdminsRaw) {
-              const fallbackAdmins = JSON.parse(fallbackAdminsRaw);
-              const matched = fallbackAdmins.find((a: any) => a.email === cleanEmail);
-              if (matched) {
-                passwordToUse = matched.password;
-              }
-            }
-
-            if (cleanEmail && passwordToUse) {
-              const { signInWithEmailAndPassword } = await import("firebase/auth");
-              await signInWithEmailAndPassword(auth, cleanEmail, passwordToUse).catch(() => null);
-            }
-          } catch (restoreErr) {
-            console.warn("Failed background admin auth restore:", restoreErr);
-          }
-        }
-      }
-
       if (auth && auth.currentUser) {
         const { collection, getDocs, getDocsFromServer, query, orderBy } = await import("firebase/firestore");
         const db = await getFirestoreDb();
@@ -1547,8 +1512,9 @@ export async function authenticateFallbackAdmin(email: string, passwordInput: st
     });
     if (!response.ok) return null;
     const data = await response.json();
-    if (data?.success && data?.role) {
-      return data.role;
+    const resolvedRole = data?.role || data?.user?.role;
+    if (data?.success && resolvedRole) {
+      return resolvedRole;
     }
   } catch (err) {
     console.warn("Server admin authentication check failed:", err);
