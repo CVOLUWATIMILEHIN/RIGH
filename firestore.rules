@@ -1,0 +1,165 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny-all rule for unknown collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-@.+:]+$');
+    }
+
+    function isSuperAdminAuth() {
+      return request.auth != null && (
+        request.auth.token.email == "olosundelouis@gmail.com" ||
+        request.auth.token.email == "rightmindsafrica@gmail.com" ||
+        request.auth.token.email == "corpersimpactinitiative@gmail.com"
+      );
+    }
+
+    // Admin operator store: never allow deletion or arbitrary client listing of all admin hashes
+    match /admins/{adminEmail} {
+      allow get: if isValidId(adminEmail);
+      allow list: if isSuperAdminAuth();
+      allow create, update: if isValidId(adminEmail)
+        && request.resource.data.keys().hasAll(['email', 'role'])
+        && !('password' in request.resource.data);
+      allow delete: if isSuperAdminAuth();
+    }
+
+    // Public-readable site configuration & content collections
+    match /settings/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update: if isValidId(docId);
+      allow delete: if isSuperAdminAuth();
+    }
+
+    match /programs/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /events/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /announcements/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /resources/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /team_members/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /testimonials/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /partners/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /historical_records/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /courses/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /course_modules/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /course_lessons/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /course_quizzes/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /course_certificates/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    // Registration, Enrollment, Contact & Newsletter collections
+    match /registrations/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /checkins/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /newsletter/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /contact_messages/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /users/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /audit_logs/{docId} {
+      allow read: if isValidId(docId);
+      allow create: if isValidId(docId);
+      allow update, delete: if isSuperAdminAuth();
+    }
+
+    match /email_logs/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /notifications/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /course_enrollments/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /course_payments/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /lesson_progress/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+
+    match /quiz_attempts/{docId} {
+      allow read: if isValidId(docId);
+      allow create, update, delete: if isValidId(docId);
+    }
+  }
+}

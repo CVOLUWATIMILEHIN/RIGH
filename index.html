@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script>
+      (function() {
+        var isBenignMessage = function(str) {
+          if (!str) return false;
+          var s = String(str).toLowerCase();
+          return (
+            s.indexOf("disconnecting idle stream") !== -1 ||
+            s.indexOf("timed out waiting for new targets") !== -1 ||
+            s.indexOf("grpcconnection rpc 'listen' stream") !== -1 ||
+            s.indexOf("websocket") !== -1 ||
+            s.indexOf("vite") !== -1 ||
+            s.indexOf("hmr") !== -1 ||
+            s.indexOf("closed without opened") !== -1 ||
+            s.indexOf("connection refused") !== -1
+          );
+        };
+
+        var suppressErrors = function(event) {
+          var error = event.error || (event.reason ? event.reason : null);
+          var message = String(event.message || (error && error.message) || error || "");
+          var stack = String((error && error.stack) || "");
+          if (isBenignMessage(message + " " + stack)) {
+            if (event.preventDefault) event.preventDefault();
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+            return true;
+          }
+        };
+
+        window.addEventListener("error", suppressErrors, true);
+        window.addEventListener("unhandledrejection", suppressErrors, true);
+
+        // Early console interception to filter benign SDK transport lifecycle notices
+        var origConsoleError = console.error;
+        console.error = function() {
+          var fullText = "";
+          for (var i = 0; i < arguments.length; i++) {
+            var arg = arguments[i];
+            if (arg instanceof Error) {
+              fullText += " " + (arg.stack || arg.message);
+            } else if (typeof arg === "object" && arg !== null) {
+              try { fullText += " " + JSON.stringify(arg); } catch(e) { fullText += " " + String(arg); }
+            } else {
+              fullText += " " + String(arg);
+            }
+          }
+          if (isBenignMessage(fullText)) {
+            return;
+          }
+          origConsoleError.apply(console, arguments);
+        };
+
+        var origConsoleWarn = console.warn;
+        console.warn = function() {
+          var fullText = "";
+          for (var i = 0; i < arguments.length; i++) {
+            var arg = arguments[i];
+            if (arg instanceof Error) {
+              fullText += " " + (arg.stack || arg.message);
+            } else {
+              fullText += " " + String(arg);
+            }
+          }
+          if (isBenignMessage(fullText)) {
+            return;
+          }
+          origConsoleWarn.apply(console, arguments);
+        };
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Right Minds Africa | Leadership, Career & Mindset Re-engineering</title>
+    <meta name="description" content="Right Minds Africa (RMA) & Corper Impact Initiative (CII) trains, mentors, and equips emerging leaders, graduates, and professionals across Africa through cognitive mindset re-engineering, civic action, and professional upskilling." />
+    <meta name="keywords" content="Right Minds Africa, Corper Impact Initiative, NYSC, Youth Leadership, Mindset Re-engineering, Career Mentorship, Africa, Skill Acquisition" />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Right Minds Africa | Leadership, Career & Mindset Re-engineering" />
+    <meta property="og:description" content="Empowering the next generation of African leaders with structured professional mentorship, life development masterclasses, and community impact drives." />
+    <meta property="og:url" content="https://right-minds-africa-750356628986.europe-west1.run.app/" />
+    <meta property="og:image" content="/src/assets/images/brand_logo_official_new_1780385523572.png" />
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:title" content="Right Minds Africa | Mindset & Leadership" />
+    <meta property="twitter:description" content="Empowering African emerging professionals and students through cognitive shifts and career training." />
+    
+    <!-- Canonical Link -->
+    <link rel="canonical" href="https://right-minds-africa-750356628986.europe-west1.run.app/" />
+
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "EducationalOrganization",
+        "name": "Right Minds Africa",
+        "alternateName": "RMA",
+        "url": "https://right-minds-africa-750356628986.europe-west1.run.app/",
+        "logo": "https://right-minds-africa-750356628986.europe-west1.run.app/src/assets/images/brand_logo_official_new_1780385523572.png",
+        "description": "Right Minds Africa (RMA) is a premier growth-mindset, leadership, and productivity training hub for young professionals, undergraduates, and corps members.",
+        "sameAs": [
+          "https://facebook.com",
+          "https://instagram.com"
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

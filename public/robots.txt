@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /rmaadmin
+Disallow: /api/
+
+Sitemap: https://right-minds-africa-750356628986.europe-west1.run.app/sitemap.xml

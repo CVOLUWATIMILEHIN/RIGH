@@ -1,0 +1,402 @@
+{
+  "entities": {
+    "Registration": {
+      "title": "Registration",
+      "description": "User registration for Right Minds Africa mentorship cohorts, community access, and programs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "profileType": { "type": "string" },
+        "location": { "type": "string" },
+        "institution": { "type": "string" },
+        "aspiration": { "type": "string" },
+        "batch": { "type": "string" },
+        "primaryGoal": { "type": "string" },
+        "registeredAt": { "type": "string", "format": "date-time" },
+        "planType": { "type": "string" },
+        "paymentReference": { "type": "string" },
+        "paymentReceipt": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "mentorTeachArea": { "type": "string" },
+        "mentorTrainSkill": { "type": "string" },
+        "mentorAudience": { "type": "string" },
+        "mentorExperience": { "type": "string" }
+      },
+      "required": ["fullName", "email", "phone", "profileType", "location"]
+    },
+    "VisitorCheckIn": {
+      "title": "VisitorCheckIn",
+      "description": "Log of visitor check-ins",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "location": { "type": "string" },
+        "deviceType": { "type": "string" },
+        "purpose": { "type": "string" },
+        "checkedInAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "location", "deviceType", "purpose", "checkedInAt"]
+    },
+    "MarqueeConfig": {
+      "title": "MarqueeConfig",
+      "description": "Scrolling announcement configuration",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "messages": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["enabled", "messages"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System-wide administrative security and data change audits",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "adminEmail", "action", "details", "timestamp"]
+    },
+    "NewsletterSubscriber": {
+      "title": "NewsletterSubscriber",
+      "description": "Captured email addresses of users subscribed to the RMA newsletters and communications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "subscribedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "subscribedAt"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Premium course details in Right Minds LMS containing modules and video lessons",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "instructorName": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "thumbnail": { "type": "string" },
+        "duration": { "type": "string" },
+        "level": { "type": "string" },
+        "lessonsCount": { "type": "number" },
+        "status": { "type": "string" },
+        "modules": { "type": "array" }
+      },
+      "required": ["title", "description", "instructorName", "category", "price", "status"]
+    },
+    "CourseEnrollment": {
+      "title": "CourseEnrollment",
+      "description": "User premium course learning enrollment records and lesson completion states",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "courseId": { "type": "string" },
+        "enrolledAt": { "type": "string", "format": "date-time" },
+        "progress": { "type": "number" },
+        "completedLessons": { "type": "array" },
+        "status": { "type": "string" }
+      },
+      "required": ["userEmail", "courseId", "enrolledAt", "progress", "status"]
+    },
+    "CoursePayment": {
+      "title": "CoursePayment",
+      "description": "Premium course Paystack payment records syncing referenced transactions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "courseId": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentReference": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userEmail", "courseId", "amount", "paymentReference", "paymentStatus", "timestamp"]
+    },
+    "CourseCertificate": {
+      "title": "CourseCertificate",
+      "description": "Verified graduation certificates containing custom QR and validation code",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "courseId": { "type": "string" },
+        "courseTitle": { "type": "string" },
+        "certificateCode": { "type": "string" },
+        "issuedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userEmail", "userName", "courseId", "courseTitle", "certificateCode", "issuedAt"]
+    },
+    "SocialPost": {
+      "title": "SocialPost",
+      "description": "Centralized social posts imported automatically or manually curated into web blogs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "platform": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "blogArticle": { "type": "string" },
+        "summary": { "type": "string" },
+        "category": { "type": "string" },
+        "mediaType": { "type": "string" },
+        "mediaUrls": { "type": "array" },
+        "postUrl": { "type": "string" },
+        "hashtags": { "type": "array" },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "syncedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" }
+      },
+      "required": ["platform", "title", "content", "category", "status", "publishedAt"]
+    },
+    "SocialFeedConfig": {
+      "title": "SocialFeedConfig",
+      "description": "Syndication settings for Automated Meta Graph and platform synchronization paths",
+      "type": "object",
+      "properties": {
+        "autoPublish": { "type": "boolean" },
+        "facebookPageId": { "type": "string" },
+        "instagramBusinessId": { "type": "string" },
+        "facebookTokenStatus": { "type": "string" },
+        "instagramTokenStatus": { "type": "string" }
+      },
+      "required": ["autoPublish"]
+    },
+    "WebsitePopup": {
+      "title": "WebsitePopup",
+      "description": "Popup campaign configuration displayed on client landing pages",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "bannerImage": { "type": "string" },
+        "eventDate": { "type": "string" },
+        "buttonText": { "type": "string" },
+        "buttonLink": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "priority": { "type": "string" },
+        "active": { "type": "boolean" },
+        "displayRule": { "type": "string" }
+      },
+      "required": ["id", "title", "description", "bannerImage", "buttonText", "buttonLink", "startDate", "endDate", "priority", "active", "displayRule"]
+    },
+    "HistoricalRecord": {
+      "title": "HistoricalRecord",
+      "description": "Right Minds historical milestones and impact timeline records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "timelineDate": { "type": "string" },
+        "year": { "type": "number" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "impactMetrics": { "type": "string" },
+        "galleryImages": { "type": "array" },
+        "tags": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "category", "timelineDate", "year", "description", "createdAt"]
+    },
+    "EmailLog": {
+      "title": "EmailLog",
+      "description": "System-wide automated email dispatch, status, and diagnostic delivery result audits",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recipient": { "type": "string", "format": "email" },
+        "subject": { "type": "string" },
+        "status": { "type": "string" },
+        "sentTime": { "type": "string", "format": "date-time" },
+        "deliveryResult": { "type": "string" }
+      },
+      "required": ["id", "recipient", "subject", "status", "sentTime"]
+    },
+    "EmailSettings": {
+      "title": "EmailSettings",
+      "description": "Configurable parameters for mail delivery notifications and course purchase templates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderName": { "type": "string" },
+        "replyTo": { "type": "string", "format": "email" },
+        "notificationEmail": { "type": "string", "format": "email" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "senderName", "replyTo", "notificationEmail"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System broadcasted, registration, or audit logs administrative alerts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isRead": { "type": "boolean" },
+        "link": { "type": "string" },
+        "adminTeam": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "message", "timestamp", "isRead"]
+    },
+    "ChatConversation": {
+      "title": "ChatConversation",
+      "description": "Visitor chat conversation threads, capturing visitor info and status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "visitorId": { "type": "string" },
+        "visitorName": { "type": "string" },
+        "visitorEmail": { "type": "string", "format": "email" },
+        "visitorPhone": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "lastMessageText": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "closed"] },
+        "assignedAdmin": { "type": "string" },
+        "unreadCount": { "type": "number" },
+        "unreadAdminCount": { "type": "number" }
+      },
+      "required": ["id", "visitorId", "visitorName", "visitorEmail", "status", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Individual messages in a chat conversation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderType": { "type": "string", "enum": ["visitor", "admin"] },
+        "senderName": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isRead": { "type": "boolean" },
+        "attachments": { "type": "array" }
+      },
+      "required": ["id", "conversationId", "senderId", "senderType", "senderName", "message", "timestamp", "isRead"]
+    },
+    "ChatSettings": {
+      "title": "ChatSettings",
+      "description": "Customizable settings for WhatsApp and Live Chat systems",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "whatsappNumber": { "type": "string" },
+        "whatsappMessage": { "type": "string" },
+        "whatsappEnabled": { "type": "boolean" },
+        "liveChatEnabled": { "type": "boolean" },
+        "officeHours": { "type": "string" },
+        "autoReplyMessage": { "type": "string" },
+        "chatPosition": { "type": "string" },
+        "chatTheme": { "type": "string" },
+        "companyLogo": { "type": "string" },
+        "supportEmail": { "type": "string" },
+        "adminStatus": { "type": "string" }
+      },
+      "required": ["id", "whatsappNumber", "whatsappMessage", "whatsappEnabled", "liveChatEnabled", "officeHours", "autoReplyMessage", "chatPosition", "chatTheme", "supportEmail", "adminStatus"]
+    }
+  },
+  "firestore": {
+    "/newsletter/{subscriberId}": {
+      "schema": "NewsletterSubscriber",
+      "description": "Captured user emails for news, newsletters, and announcements"
+    },
+    "/registrations/{registrationId}": {
+      "schema": "Registration",
+      "description": "Exhaustive collection listing all active community member and program registrations"
+    },
+    "/checkins/{checkinId}": {
+      "schema": "VisitorCheckIn",
+      "description": "Log of user and visitor interactive check-ins"
+    },
+    "/settings/{settingId}": {
+      "schema": "MarqueeConfig",
+      "description": "Dynamic configuration parameters for site operation"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Persistent log entries monitoring security changes, deletions, and updates"
+    },
+    "/courses/{courseId}": {
+      "schema": "Course",
+      "description": "Academy premium courses"
+    },
+    "/course_enrollments/{enrollmentId}": {
+      "schema": "CourseEnrollment",
+      "description": "User enrollments for courses"
+    },
+    "/course_payments/{paymentId}": {
+      "schema": "CoursePayment",
+      "description": "Course Paystack transaction records"
+    },
+    "/course_certificates/{certificateId}": {
+      "schema": "CourseCertificate",
+      "description": "Generated course certificates"
+    },
+    "/social_posts/{postId}": {
+      "schema": "SocialPost",
+      "description": "Auto-synced social blogs database"
+    },
+    "/social_feed_configs/{configId}": {
+      "schema": "SocialFeedConfig",
+      "description": "Admin automation settings coordinates"
+    },
+    "/website_popups/{popupId}": {
+      "schema": "WebsitePopup",
+      "description": "Popup alerts displayed to users based on display scheduling"
+    },
+    "/historical_records/{recordId}": {
+      "schema": "HistoricalRecord",
+      "description": "Historical timeline milestones and regional achievements"
+    },
+    "/email_logs/{logId}": {
+      "schema": "EmailLog",
+      "description": "Trace logging database detailing applicant delivery outputs"
+    },
+    "/settings/email_settings": {
+      "schema": "EmailSettings",
+      "description": "Unified dynamic notifications management config"
+    },
+    "/settings/chat_settings": {
+      "schema": "ChatSettings",
+      "description": "WhatsApp and Live Chat configuration details"
+    },
+    "/chat_conversations/{conversationId}": {
+      "schema": "ChatConversation",
+      "description": "Interactive chat conversations list"
+    },
+    "/chat_conversations/{conversationId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Thread messages under a specific conversation"
+    },
+    "/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "Captured user enrollment notifications and automated alerts"
+    }
+  }
+}
