@@ -19,10 +19,16 @@ import {
   Trash2,
   X,
   FileSpreadsheet,
-  Globe
+  Globe,
+  Maximize2,
+  Minimize2,
+  Settings
 } from "lucide-react";
-import { getFirebaseAuth, getFirestoreDb } from "../lib/db";
+import { getFirebaseAuth, getFirestoreDb, getPortalApplications, PortalApplication } from "../lib/db";
 import { signInWithPopup, GoogleAuthProvider, User } from "firebase/auth";
+
+const DEFAULT_VOLUNTEER_GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScq8FZgaFF_hYxLbKk0eLjLwuMW1iYRPjZpYfMljdQ3k_oCHQ/viewform?embedded=true";
+const CONNECTED_GOOGLE_EMAIL = "olosundelouis@gmail.com";
 
 // Module level in-memory token cache (retained during SPA navigation but cleared on full refresh)
 let cachedAccessToken: string | null = null;
@@ -112,6 +118,134 @@ export default function AdminGoogleForms({ hasWriteAccess, onLogAction }: AdminG
   const [newFormTitle, setNewFormTitle] = useState("");
   const [isCreatingForm, setIsCreatingForm] = useState(false);
 
+  // Volunteer Intake Form Backend Controls State
+  const [volunteerFormMode, setVolunteerFormMode] = useState<"google_form" | "interactive">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("rma_volunteer_form_mode");
+      if (saved === "google_form" || saved === "interactive") return saved;
+    }
+    return "google_form";
+  });
+  const [volunteerFormUrl, setVolunteerFormUrl] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("rma_volunteer_google_form_url");
+      if (saved && !saved.includes("1FAIpQLScXg5V3NqYqP_RMA_Volunteer_Intake")) return saved;
+    }
+    return DEFAULT_VOLUNTEER_GOOGLE_FORM_URL;
+  });
+  const [customVolunteerUrlInput, setCustomVolunteerUrlInput] = useState<string>(volunteerFormUrl);
+  const [isVolunteerFullScreen, setIsVolunteerFullScreen] = useState(false);
+  const [volunteerApplications, setVolunteerApplications] = useState<PortalApplication[]>([]);
+
+  const getEmbedUrl = (rawUrl: string) => {
+    if (!rawUrl) return DEFAULT_VOLUNTEER_GOOGLE_FORM_URL;
+    let clean = rawUrl.trim();
+    const srcMatch = clean.match(/src=["']([^"']+)["']/i);
+    if (srcMatch && srcMatch[1]) clean = srcMatch[1].trim();
+    if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+      clean = `https://docs.google.com/forms/d/e/${clean}/viewform`;
+    }
+    if (clean.includes("?")) {
+      if (!clean.includes("embedded=true")) clean = `${clean}&embedded=true`;
+    } else {
+      clean = `${clean}?embedded=true`;
+    }
+    return clean;
+  };
+
+  const handleSetVolunteerMode = async (mode: "google_form" | "interactive") => {
+    setVolunteerFormMode(mode);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rma_volunteer_form_mode", mode);
+      window.dispatchEvent(new Event("rma_volunteer_form_config_updated"));
+    }
+    try {
+      const { doc, setDoc } = await import("firebase/firestore");
+      const db = await getFirestoreDb();
+      await setDoc(doc(db, "settings", "google_forms"), {
+        volunteerFormMode: mode,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      setFeedback({
+        text: `Volunteer page switched to ${mode === "google_form" ? "Google Form" : "Direct Form"} mode.`,
+        type: "success"
+      });
+      onLogAction(`⚙️ [VOLUNTEER FORM] Set active Volunteer Application mode to: ${mode === "google_form" ? "Google Form" : "Direct Form"}`);
+    } catch (err) {
+      console.warn("Could not sync volunteerFormMode to Firestore:", err);
+    }
+  };
+
+  const handleSaveVolunteerFormUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customVolunteerUrlInput.trim()) return;
+    let clean = customVolunteerUrlInput.trim();
+    const srcMatch = clean.match(/src=["']([^"']+)["']/i);
+    if (srcMatch && srcMatch[1]) clean = srcMatch[1].trim();
+    if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+      clean = `https://docs.google.com/forms/d/e/${clean}/viewform`;
+    }
+    setVolunteerFormUrl(clean);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rma_volunteer_google_form_url", clean);
+      window.dispatchEvent(new Event("rma_volunteer_form_config_updated"));
+    }
+    try {
+      const { doc, setDoc } = await import("firebase/firestore");
+      const db = await getFirestoreDb();
+      await setDoc(doc(db, "settings", "google_forms"), {
+        volunteerFormUrl: clean,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      setFeedback({ text: "Volunteer Google Form URL updated and synced!", type: "success" });
+      onLogAction(`🔗 [VOLUNTEER FORM] Updated Volunteer Google Form URL in backend settings.`);
+    } catch (err) {
+      console.warn("Could not save volunteerFormUrl to Firestore:", err);
+    }
+  };
+
+  const handleExportVolunteerCSV = async () => {
+    try {
+      const apps = await getPortalApplications();
+      const volunteerApps = apps.filter(a => a.type === "volunteer" || a.type?.includes("volunteer"));
+      if (volunteerApps.length === 0) {
+        setFeedback({
+          text: "No direct volunteer application submissions recorded yet. Once candidates submit, they can be exported to CSV here.",
+          type: "info"
+        });
+        return;
+      }
+      const headers = ["Application ID", "Full Name", "Email Address", "Phone Number", "Location", "Primary Role", "Secondary Role", "Relevant Skills", "Why Volunteer", "Value Brought", "Video URL", "Availability", "Work Arrangement", "Submitted At"];
+      const rows = volunteerApps.map(a => [
+        `"${a.id}"`,
+        `"${(a.fullName || '').replace(/"/g, '""')}"`,
+        `"${(a.email || '').replace(/"/g, '""')}"`,
+        `"${(a.phone || '').replace(/"/g, '""')}"`,
+        `"${(a.options?.location || '').replace(/"/g, '""')}"`,
+        `"${(a.options?.primaryRole || '').replace(/"/g, '""')}"`,
+        `"${(a.options?.secondaryRole || '').replace(/"/g, '""')}"`,
+        `"${(Array.isArray(a.options?.relevantSkills) ? a.options.relevantSkills.join(', ') : '').replace(/"/g, '""')}"`,
+        `"${(a.options?.whyVolunteer || a.notes || '').replace(/"/g, '""')}"`,
+        `"${(a.options?.valueContribution || '').replace(/"/g, '""')}"`,
+        `"${(a.options?.videoUrl || '').replace(/"/g, '""')}"`,
+        `"${(a.options?.availability || '').replace(/"/g, '""')}"`,
+        `"${(a.options?.workArrangement || '').replace(/"/g, '""')}"`,
+        `"${a.appliedAt || a.options?.submittedAt || ''}"`
+      ]);
+      const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `RMA_Volunteer_Applications_Google_Sheets_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      onLogAction(`📥 [VOLUNTEER CSV] Exported ${volunteerApps.length} volunteer applications to CSV.`);
+    } catch (err) {
+      console.error("Volunteer CSV export error:", err);
+    }
+  };
+
   // Auto-dismiss feedbacks
   useEffect(() => {
     if (feedback) {
@@ -120,16 +254,32 @@ export default function AdminGoogleForms({ hasWriteAccess, onLogAction }: AdminG
     }
   }, [feedback]);
 
-  // Read active Google Form setting from Firestore on mount
+  // Read active Google Form setting and volunteer applications on mount
   useEffect(() => {
     const fetchActiveFormId = async () => {
+      try {
+        const apps = await getPortalApplications();
+        setVolunteerApplications(apps.filter(a => a.type === "volunteer" || a.type?.includes("volunteer")));
+      } catch (e) {}
+
       try {
         const { doc, getDoc } = await import("firebase/firestore");
         const db = await getFirestoreDb();
         const docRef = doc(db, "settings", "google_forms");
         const snap = await getDoc(docRef);
         if (snap.exists()) {
-          setFirestoreActiveFormId(snap.data().activeFormId || null);
+          const data = snap.data();
+          setFirestoreActiveFormId(data.activeFormId || null);
+          if (data.volunteerFormMode === "google_form" || data.volunteerFormMode === "interactive") {
+            setVolunteerFormMode(data.volunteerFormMode);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("rma_volunteer_form_mode", data.volunteerFormMode);
+            }
+          }
+          if (data.volunteerFormUrl && !data.volunteerFormUrl.includes("1FAIpQLScXg5V3NqYqP_RMA_Volunteer_Intake")) {
+            setVolunteerFormUrl(data.volunteerFormUrl);
+            setCustomVolunteerUrlInput(data.volunteerFormUrl);
+          }
         }
       } catch (err) {
         console.warn("Could not load active Google Form settings from Firestore:", err);
@@ -478,6 +628,146 @@ export default function AdminGoogleForms({ hasWriteAccess, onLogAction }: AdminG
         }`}>
           {feedback.type === "success" ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2ECC71]" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
           <span>{feedback.text}</span>
+        </div>
+      )}
+
+      {/* 2B. Volunteer Application Intake & Spreadsheet Backend Control Bar */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5 text-left">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-black uppercase text-[#103D2E] font-mono tracking-widest bg-[#FAF8F3] border border-[#103D2E]/10 px-3 py-1 rounded-full">
+                Volunteer Intake Backend Controls
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Connected to {CONNECTED_GOOGLE_EMAIL}
+              </span>
+            </div>
+            <h3 className="font-display font-black text-base text-slate-800 uppercase tracking-tight">
+              Volunteer Application Form &amp; Spreadsheet Controls
+            </h3>
+            <p className="text-xs text-slate-500">
+              Switch the public Volunteer page between Google Form and Direct Form, open the connected Google Sheet, export CSV submissions, or preview in Full Screen.
+            </p>
+          </div>
+
+          {/* Action Buttons: Google Form | Direct Form | Google Sheet | Export CSV | Full Screen */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+              <button
+                type="button"
+                onClick={() => handleSetVolunteerMode("google_form")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  volunteerFormMode === "google_form"
+                    ? "bg-[#103D2E] text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Google Form
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetVolunteerMode("interactive")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  volunteerFormMode === "interactive"
+                    ? "bg-[#103D2E] text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Direct Form
+              </button>
+            </div>
+
+            <a
+              href={`https://docs.google.com/spreadsheets/u/0/?authuser=${CONNECTED_GOOGLE_EMAIL}`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer"
+              title={`Open Google Sheets for ${CONNECTED_GOOGLE_EMAIL}`}
+            >
+              <FileSpreadsheet size={14} className="text-emerald-600" />
+              <span>Google Sheet</span>
+            </a>
+
+            <button
+              type="button"
+              onClick={handleExportVolunteerCSV}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Export volunteer submissions as CSV for Google Sheets"
+            >
+              <Download size={13} />
+              <span>Export CSV</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsVolunteerFullScreen(true)}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Open Google Form in Full Screen view"
+            >
+              <Maximize2 size={13} />
+              <span>Full Screen</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Google Form URL Configuration Row */}
+        <form onSubmit={handleSaveVolunteerFormUrl} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2">
+            <Settings size={14} className="text-slate-400 shrink-0" />
+            <input
+              type="text"
+              value={customVolunteerUrlInput}
+              onChange={(e) => setCustomVolunteerUrlInput(e.target.value)}
+              placeholder="Paste Google Form URL or embed link..."
+              className="w-full bg-transparent text-xs font-mono text-slate-700 outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            className="px-4 py-2 bg-[#103D2E] hover:bg-[#0b2b20] text-amber-300 text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer transition-all shrink-0"
+          >
+            Save Form URL
+          </button>
+        </form>
+      </div>
+
+      {/* Fullscreen Google Form Modal for Admin */}
+      {isVolunteerFullScreen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-md flex flex-col">
+          <div className="w-full bg-[#103D2E] text-white px-4 sm:px-6 py-3.5 flex items-center justify-between shadow-md">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-black uppercase text-amber-300 font-mono tracking-widest bg-white/10 px-2.5 py-1 rounded-md">
+                Admin Fullscreen Preview
+              </span>
+              <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wide">
+                Right-Minds Africa Hub — Volunteer Google Form
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsVolunteerFullScreen(false)}
+              className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Minimize2 size={13} />
+              <span>Exit Fullscreen</span>
+            </button>
+          </div>
+          <div className="flex-1 w-full bg-white relative">
+            <iframe
+              src={getEmbedUrl(volunteerFormUrl)}
+              width="100%"
+              height="100%"
+              frameBorder="0"
+              marginHeight={0}
+              marginWidth={0}
+              className="w-full h-full bg-white border-0"
+              title="Right-Minds Africa Hub Volunteer Application Fullscreen"
+            >
+              Loading Google Form...
+            </iframe>
+          </div>
         </div>
       )}
 

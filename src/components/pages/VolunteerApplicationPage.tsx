@@ -75,8 +75,16 @@ const DEFAULT_GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScq8FZ
 const CONNECTED_GOOGLE_EMAIL = "olosundelouis@gmail.com";
 
 export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplicationPageProps) {
-  // Mode: "google_form" is default as requested
-  const [formMode, setFormMode] = useState<"google_form" | "interactive">("google_form");
+  // Mode: synced from Admin Backend settings ("google_form" is default)
+  const [formMode, setFormMode] = useState<"google_form" | "interactive">(() => {
+    if (typeof window !== "undefined") {
+      const savedMode = localStorage.getItem("rma_volunteer_form_mode");
+      if (savedMode === "google_form" || savedMode === "interactive") {
+        return savedMode;
+      }
+    }
+    return "google_form";
+  });
 
   // Google Form integration state
   const [googleFormUrl, setGoogleFormUrl] = useState<string>(() => {
@@ -186,16 +194,34 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     }
   };
 
-  // Fetch active Google Form URL from Firestore settings
+  // Fetch active Google Form URL and Mode from Firestore settings
   useEffect(() => {
     const fetchFormSetting = async () => {
       try {
+        if (typeof window !== "undefined") {
+          const savedMode = localStorage.getItem("rma_volunteer_form_mode");
+          if (savedMode === "google_form" || savedMode === "interactive") {
+            setFormMode(savedMode);
+          }
+          const savedUrl = localStorage.getItem("rma_volunteer_google_form_url");
+          if (savedUrl && !savedUrl.includes("1FAIpQLScXg5V3NqYqP_RMA_Volunteer_Intake")) {
+            setGoogleFormUrl(savedUrl);
+            setCustomUrlInput(savedUrl);
+          }
+        }
+
         const { doc, getDoc } = await import("firebase/firestore");
         const db = await getFirestoreDb();
         const docRef = doc(db, "settings", "google_forms");
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           const data = snap.data();
+          if (data.volunteerFormMode === "google_form" || data.volunteerFormMode === "interactive") {
+            setFormMode(data.volunteerFormMode);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("rma_volunteer_form_mode", data.volunteerFormMode);
+            }
+          }
           if (data.volunteerFormUrl && !data.volunteerFormUrl.includes("1FAIpQLScXg5V3NqYqP_RMA_Volunteer_Intake")) {
             setGoogleFormUrl(data.volunteerFormUrl);
             setCustomUrlInput(data.volunteerFormUrl);
@@ -211,6 +237,8 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     };
 
     fetchFormSetting();
+    window.addEventListener("rma_volunteer_form_config_updated", fetchFormSetting);
+    return () => window.removeEventListener("rma_volunteer_form_config_updated", fetchFormSetting);
   }, []);
 
   // Format Google Form URL for clean embedding (supports full <iframe> tags, URLs, or form IDs)
@@ -474,7 +502,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           </div>
 
           <div className="p-5 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl text-emerald-900 text-sm sm:text-base leading-relaxed font-medium">
-            Thank you for applying to volunteer with Right-Minds Africa Hub! Your application has been submitted successfully and recorded for administrator review at <strong>{CONNECTED_GOOGLE_EMAIL}</strong>. Our team will review your information and contact you regarding the next steps.
+            Thank you for applying to volunteer with Right-Minds Africa Hub! Your application has been submitted successfully. Our team will review your information and contact you regarding the next steps.
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
@@ -518,16 +546,6 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
               >
                 Return to Main Website <ArrowRight size={14} />
               </button>
-
-              <a
-                href={`https://docs.google.com/spreadsheets/u/0/?authuser=${CONNECTED_GOOGLE_EMAIL}`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-5 py-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold uppercase tracking-wider rounded-xl transition-all inline-flex items-center gap-2"
-              >
-                <FileSpreadsheet size={15} className="text-emerald-600" />
-                <span>Open Google Sheet ({CONNECTED_GOOGLE_EMAIL})</span>
-              </a>
             </div>
 
             <button
@@ -562,10 +580,6 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
               <span className="text-[10px] font-black uppercase text-amber-700 bg-amber-500/10 border border-amber-500/20 px-3.5 py-1.5 rounded-full font-mono">
                 ✨ Become a Volunteer
               </span>
-              <div className="flex items-center gap-2 text-2xs text-slate-600 font-medium bg-emerald-50 border border-emerald-200/80 px-3 py-1.5 rounded-full">
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Spreadsheet connected: <strong className="text-emerald-900">{CONNECTED_GOOGLE_EMAIL}</strong></span>
-              </div>
             </div>
 
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-slate-900 font-display tracking-tight leading-tight">
@@ -590,16 +604,6 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                 <span>Apply to Volunteer</span>
                 <ArrowRight size={16} />
               </button>
-
-              <a
-                href={`https://docs.google.com/spreadsheets/u/0/?authuser=${CONNECTED_GOOGLE_EMAIL}`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-5 py-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold uppercase tracking-wider rounded-2xl transition-all inline-flex items-center gap-2 shadow-xs"
-              >
-                <FileSpreadsheet size={15} className="text-emerald-600" />
-                <span>Open Google Sheet ({CONNECTED_GOOGLE_EMAIL})</span>
-              </a>
 
               <button
                 type="button"
@@ -774,114 +778,20 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
               ========================================================================= */}
           <div id="volunteer-application-form" className="w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 md:p-10 lg:p-12 text-left space-y-8 scroll-mt-20">
             
-            {/* Top Toolbar: Google Form Sync Badge + Actions */}
+            {/* Top Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-100 pb-6">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-black uppercase text-[#0E3A2F] font-mono tracking-widest bg-[#FAF8F3] border border-[#0E3A2F]/10 px-3 py-1.5 rounded-full">
                     📝 Official Volunteer Application
                   </span>
-                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full flex items-center gap-1.5 font-mono">
-                    <CheckCircle2 size={12} className="text-emerald-600" />
-                    Connected to Google Sheets: {CONNECTED_GOOGLE_EMAIL}
-                  </span>
                 </div>
                 <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 uppercase tracking-tight">
                   Volunteer Intake Form
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600">
-                  Submissions are logged directly into the Google Form and linked spreadsheet accessible to <strong className="text-slate-900">{CONNECTED_GOOGLE_EMAIL}</strong>.
+                  Complete the official application form below to join the Right-Minds Africa Hub volunteer team.
                 </p>
-              </div>
-
-              {/* Action Buttons: Mode Switch, Spreadsheet, CSV Export, Fullscreen, Configure */}
-              <div className="flex items-center gap-2.5 flex-wrap">
-                {/* Form mode switcher */}
-                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80">
-                  <button
-                    type="button"
-                    onClick={() => setFormMode("google_form")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      formMode === "google_form"
-                        ? "bg-[#0E3A2F] text-white shadow-xs"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    Google Form
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormMode("interactive")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      formMode === "interactive"
-                        ? "bg-[#0E3A2F] text-white shadow-xs"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    Direct Form
-                  </button>
-                </div>
-
-                <a
-                  href={`https://docs.google.com/spreadsheets/u/0/?authuser=${CONNECTED_GOOGLE_EMAIL}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all"
-                  title="Open responses spreadsheet in Google Sheets"
-                >
-                  <FileSpreadsheet size={14} className="text-emerald-600" />
-                  <span className="hidden sm:inline">Google Sheet</span>
-                  <ExternalLink size={11} />
-                </a>
-
-                <button
-                  type="button"
-                  onClick={handleExportToGoogleSheets}
-                  className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                  title="Download all responses as CSV for Google Sheets"
-                >
-                  <Download size={13} className="text-slate-600" />
-                  <span className="hidden md:inline">Export CSV</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsFullScreenIframe(true)}
-                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Open Google Form in Full Screen view"
-                >
-                  <Maximize2 size={13} />
-                  <span className="hidden sm:inline">Full Screen</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowConfigModal(true)}
-                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer"
-                  title="Configure Google Form URL"
-                >
-                  <Settings size={15} />
-                </button>
-              </div>
-            </div>
-
-            {/* Notification explaining Google Sheets access */}
-            <div className="p-4 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-950">
-              <div className="flex items-center gap-2.5">
-                <FileSpreadsheet size={18} className="text-emerald-700 shrink-0" />
-                <span>
-                  <strong>Spreadsheet Access Active:</strong> All form submissions are routed directly to <strong>{CONNECTED_GOOGLE_EMAIL}</strong> for viewing and team processing in Google Sheets.
-                </span>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <a
-                  href={`https://docs.google.com/spreadsheets/u/0/?authuser=${CONNECTED_GOOGLE_EMAIL}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-emerald-800 underline font-extrabold shrink-0 hover:text-emerald-950 inline-flex items-center gap-1"
-                >
-                  Access Spreadsheet &rarr;
-                </a>
               </div>
             </div>
 
@@ -1408,22 +1318,9 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                 <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wide">
                   Right-Minds Africa Hub — Volunteer Application
                 </span>
-                <span className="hidden md:inline text-xs text-white/70">
-                  • Connected to Google Sheets ({CONNECTED_GOOGLE_EMAIL})
-                </span>
               </div>
 
               <div className="flex items-center gap-2">
-                <a
-                  href={`https://docs.google.com/spreadsheets/u/0/?authuser=${CONNECTED_GOOGLE_EMAIL}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs"
-                >
-                  <FileSpreadsheet size={13} />
-                  <span className="hidden sm:inline">Google Sheet</span>
-                </a>
-
                 <button
                   type="button"
                   onClick={() => setIsFullScreenIframe(false)}
