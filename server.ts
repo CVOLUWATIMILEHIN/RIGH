@@ -66,9 +66,7 @@ const ADMIN_TOKEN_SECRET =
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 const ANCHOR_SUPER_ADMINS = new Set([
-  "olosundelouis@gmail.com",
-  "rightmindsafrica@gmail.com",
-  "corpersimpactinitiative@gmail.com"
+  "olosundelouis@gmail.com"
 ]);
 
 function hashPasswordScrypt(password: string, salt?: string): { salt: string; hash: string } {
@@ -124,6 +122,10 @@ const adminCredentialStore = new Map<
 for (const email of ANCHOR_SUPER_ADMINS) {
   const { salt, hash } = hashPasswordScrypt(defaultMasterPassword);
   adminCredentialStore.set(email, { salt, hash, role: "Super Admin", canWrite: true });
+}
+for (const email of ["rightmindsafrica@gmail.com", "corpersimpactinitiative@gmail.com"]) {
+  const { salt, hash } = hashPasswordScrypt(defaultMasterPassword);
+  adminCredentialStore.set(email, { salt, hash, role: "Admin", canWrite: true });
 }
 
 // Brute-force lockout tracker per IP + Email
@@ -230,14 +232,14 @@ app.post("/api/admin/login", async (req, res) => {
     // 1. Check in-memory server store first
     const memRecord = adminCredentialStore.get(rawEmail);
     if (memRecord && verifyPasswordScrypt(rawPassword, memRecord.salt, memRecord.hash)) {
-      matchedRole = memRecord.role;
+      matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : memRecord.role;
       matchedAllowedTabs = memRecord.allowedTabs;
       matchedCanWrite = memRecord.canWrite;
     }
 
-    // 2. Check master admin password hash (RMAAdmin2026)
-    if (!matchedRole && isMasterAdminPassword(rawPassword)) {
-      matchedRole = "Super Admin";
+    // 2. Check master admin password hash (RMAAdmin2026) only if operator hasn't had a custom password set
+    if (!matchedRole && !memRecord && isMasterAdminPassword(rawPassword)) {
+      matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : "Admin";
       matchedCanWrite = true;
     }
 
@@ -989,6 +991,23 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
                   </div>
                 `;
               }
+              if (trimmed.startsWith("Access Admin Portal: ")) {
+                const url = trimmed.replace("Access Admin Portal: ", "").trim();
+                return `
+                  <div style="text-align: center; margin: 28px 0;">
+                    <a href="${url}" style="background-color: #103D2E; color: #FCD34D; padding: 14px 28px; font-size: 13px; font-weight: 800; text-decoration: none; border-radius: 12px; display: inline-block; text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid #F59E0B;">Access Admin Portal &rarr;</a>
+                  </div>
+                `;
+              }
+              if (trimmed.startsWith("* ") && trimmed.includes(":")) {
+                const [k, ...rest] = trimmed.slice(2).split(":");
+                const val = rest.join(":").trim();
+                return `
+                  <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; font-size: 13px;">
+                    <strong style="color: #103D2E;">${k}:</strong> <span style="font-family: monospace; font-weight: 700; color: #0F172A;">${val}</span>
+                  </div>
+                `;
+              }
               return `<p>${p}</p>`;
             }).join("")}
           </div>
@@ -1557,6 +1576,84 @@ Right Minds Notification System`;
       }
 
       return res.json({ success: visitorDispatch.success, message: "Offline chat notifications dispatched." });
+    }
+
+    if (event === "ADMIN_CREATED") {
+      const adminEmail = (payload?.email || "").trim().toLowerCase();
+      const adminName = payload?.fullName || adminEmail.split("@")[0] || "Administrator";
+      const adminPassword = payload?.password || "";
+      const role = payload?.role || "Admin";
+      const canWrite = payload?.canWrite !== false;
+      const portalUrl = payload?.portalUrl || `${process.env.APP_URL || "https://rightmindsafrica.org"}/admin`;
+      const moduleLabels: string[] = Array.isArray(payload?.moduleLabels) && payload.moduleLabels.length > 0
+        ? payload.moduleLabels
+        : (Array.isArray(payload?.allowedTabs) ? payload.allowedTabs : ["Overview Dashboard"]);
+      const isPasswordUpdate = !!payload?.isPasswordUpdate;
+
+      if (!adminEmail) {
+        return res.status(400).json({ error: "Missing administrator email address." });
+      }
+
+      const accessModeLabel = canWrite
+        ? "Read & Write (Can create, edit & manage records)"
+        : "Read-Only (View & export only)";
+
+      const subject = isPasswordUpdate
+        ? "Updated Administrator Login Credentials – Right Minds Africa Portal"
+        : "Your Administrator Login Credentials – Right Minds Africa Portal";
+
+      const emailBody = `Dear ${adminName},
+
+You have been provisioned as an Administrator on the Right Minds Africa (RMA) & Corper Impact Initiative (CII) Operations Portal by the System Owner (Super Admin).
+
+Below are your official administrator login credentials and assigned permissions:
+
+* Admin Portal Login URL: ${portalUrl}
+* Login Email Address: ${adminEmail}
+* Temporary / Login Password: ${adminPassword}
+* Assigned Role: ${role}
+* Access Permission Level: ${accessModeLabel}
+* Authorized Modules (${moduleLabels.length}): ${moduleLabels.join(", ")}
+
+Access Admin Portal: ${portalUrl}
+
+How to Sign In:
+1. Click the button above or visit ${portalUrl} in your browser.
+2. Enter your Login Email Address (${adminEmail}) and your assigned password.
+3. Once authenticated, your workspace will automatically load the ${moduleLabels.length} modules assigned to you.
+
+Security Notice:
+Please keep these login details strictly confidential and do not share your administrator password with unauthorized personnel.
+
+Regards,
+System Owner (Super Admin)
+Right Minds Africa & Corper Impact Initiative`;
+
+      const dispatch = await sendEmailViaResend(adminEmail, subject, emailBody, senderOpts);
+
+      if (db) {
+        const logId = payload?.logId || `mail-admin-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        await setDoc(doc(db, "email_logs", logId), {
+          id: logId,
+          recipient: adminEmail,
+          subject,
+          body: emailBody,
+          registrationId: `ADM-${Date.now().toString().slice(-5)}`,
+          programType: "Admin Credentials",
+          status: dispatch.success ? "success" : "failed",
+          timestamp: new Date().toISOString(),
+          sentTime: new Date().toISOString(),
+          deliveryResult: dispatch.success
+            ? `Admin login credentials delivered: ref=${dispatch.messageId}`
+            : `Failure: ${dispatch.error}`
+        }, { merge: true });
+      }
+
+      return res.json({
+        success: dispatch.success,
+        messageId: dispatch.messageId,
+        message: "Administrator login credentials dispatched via email."
+      });
     }
 
     res.status(400).json({ error: `Event [${event}] not mapped inside dispatch tables.` });

@@ -1516,10 +1516,105 @@ const MASTER_ADMIN_SHA256_DIGESTS = new Set([
 ]);
 
 export const ANCHOR_SUPER_ADMIN_EMAILS = [
-  "olosundelouis@gmail.com",
-  "rightmindsafrica@gmail.com",
-  "corpersimpactinitiative@gmail.com"
+  "olosundelouis@gmail.com"
 ];
+
+const DEFAULT_EDITABLE_ADMIN_OPERATORS: AdminOperatorRecord[] = [
+  {
+    email: "rightmindsafrica@gmail.com",
+    fullName: "Right Minds Africa Admin",
+    role: "Admin",
+    allowedTabs: [
+      "dashboard",
+      "reg-cii",
+      "reg-rma",
+      "teen-bootcamp",
+      "payments",
+      "events",
+      "resources",
+      "gallery",
+      "website-popups",
+      "social-hub",
+      "google-forms",
+      "messages",
+      "testimonials",
+      "partners",
+      "lms-courses",
+      "lms-modules",
+      "lms-students",
+      "lms-payments",
+      "lms-enrollments",
+      "lms-certificates",
+      "lms-analytics",
+      "lms-payment-settings",
+      "visitors-live",
+      "notifications",
+      "visitors-analytics",
+      "live-chat"
+    ],
+    canWrite: true,
+    status: "Active",
+    createdBy: "olosundelouis@gmail.com",
+    createdAt: "2026-05-01T10:00:00.000Z"
+  },
+  {
+    email: "corpersimpactinitiative@gmail.com",
+    fullName: "Corper Impact Initiative Admin",
+    role: "Admin",
+    allowedTabs: [
+      "dashboard",
+      "reg-cii",
+      "reg-rma",
+      "teen-bootcamp",
+      "payments",
+      "events",
+      "resources",
+      "gallery",
+      "website-popups",
+      "social-hub",
+      "google-forms",
+      "messages",
+      "testimonials",
+      "partners",
+      "lms-courses",
+      "lms-modules",
+      "lms-students",
+      "lms-payments",
+      "lms-enrollments",
+      "lms-certificates",
+      "lms-analytics",
+      "lms-payment-settings",
+      "visitors-live",
+      "notifications",
+      "visitors-analytics",
+      "live-chat"
+    ],
+    canWrite: true,
+    status: "Active",
+    createdBy: "olosundelouis@gmail.com",
+    createdAt: "2026-05-01T10:05:00.000Z"
+  }
+];
+
+function getDeletedAdminOperatorEmailsLocal(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem("rma_deleted_admin_operators");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map((e: string) => String(e).toLowerCase());
+    }
+  } catch {}
+  return [];
+}
+
+function saveDeletedAdminOperatorEmailsLocal(emails: string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const unique = Array.from(new Set(emails.map((e) => e.toLowerCase())));
+    localStorage.setItem("rma_deleted_admin_operators", JSON.stringify(unique));
+  } catch {}
+}
 
 async function computeSha256Hex(input: string): Promise<string> {
   if (typeof window !== "undefined" && window.crypto?.subtle) {
@@ -1571,6 +1666,7 @@ export async function createClientSignedSession(
 }
 
 export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
+  const deletedEmails = new Set(getDeletedAdminOperatorEmailsLocal());
   let list: AdminOperatorRecord[] = [];
   if (typeof window !== "undefined") {
     try {
@@ -1581,6 +1677,33 @@ export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
     } catch {}
   }
 
+  // Ensure default editable admins (rightmindsafrica@gmail.com, corpersimpactinitiative@gmail.com) are present unless deleted
+  const map = new Map<string, AdminOperatorRecord>();
+  for (const seedOp of DEFAULT_EDITABLE_ADMIN_OPERATORS) {
+    const emailKey = seedOp.email.toLowerCase();
+    if (!deletedEmails.has(emailKey)) {
+      map.set(emailKey, { ...seedOp });
+    }
+  }
+  for (const item of list) {
+    const emailKey = (item.email || "").toLowerCase().trim();
+    if (emailKey && !deletedEmails.has(emailKey)) {
+      const isSovereignOwner = ANCHOR_SUPER_ADMIN_EMAILS.includes(emailKey);
+      const normalizedRole = isSovereignOwner
+        ? "Super Admin"
+        : item.role === "Super Admin"
+        ? "Admin"
+        : (item.role || "Admin");
+      map.set(emailKey, {
+        ...map.get(emailKey),
+        ...item,
+        email: emailKey,
+        role: normalizedRole
+      });
+    }
+  }
+  list = Array.from(map.values());
+
   try {
     const { collection, getDocs } = await import("firebase/firestore");
     const db = await getFirestoreDb();
@@ -1589,11 +1712,17 @@ export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
     snap.forEach((docSnap) => {
       const data = docSnap.data();
       const email = (data.email || docSnap.id || "").toLowerCase().trim();
-      if (email) {
+      if (email && !deletedEmails.has(email)) {
+        const isSovereignOwner = ANCHOR_SUPER_ADMIN_EMAILS.includes(email);
+        const normalizedRole = isSovereignOwner
+          ? "Super Admin"
+          : data.role === "Super Admin"
+          ? "Admin"
+          : (data.role || "Admin");
         fbList.push({
           email,
           fullName: data.fullName || email.split("@")[0],
-          role: ANCHOR_SUPER_ADMIN_EMAILS.includes(email) ? "Super Admin" : (data.role || "Admin"),
+          role: normalizedRole,
           allowedTabs: Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined,
           canWrite: typeof data.canWrite === "boolean" ? data.canWrite : true,
           status: data.status || "Active",
@@ -1605,14 +1734,10 @@ export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
       }
     });
     if (fbList.length > 0) {
-      // Merge with local list so any offline-created operator is preserved
-      const map = new Map<string, AdminOperatorRecord>();
-      for (const item of list) {
-        map.set(item.email.toLowerCase(), item);
-      }
       for (const fbItem of fbList) {
-        const existing = map.get(fbItem.email.toLowerCase());
-        map.set(fbItem.email.toLowerCase(), {
+        const emailKey = fbItem.email.toLowerCase();
+        const existing = map.get(emailKey);
+        map.set(emailKey, {
           ...existing,
           ...fbItem,
           allowedTabs: fbItem.allowedTabs || existing?.allowedTabs,
@@ -1620,12 +1745,15 @@ export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
         });
       }
       list = Array.from(map.values());
-      if (typeof window !== "undefined") {
-        localStorage.setItem("rma_admin_operators_directory", JSON.stringify(list));
-      }
     }
   } catch (err) {
     console.warn("Could not fetch admins collection from Firestore, using cached directory:", err);
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem("rma_admin_operators_directory", JSON.stringify(list));
+    } catch {}
   }
 
   return list;
@@ -1742,10 +1870,149 @@ export async function authenticateFallbackAdmin(email: string, passwordInput: st
   }
 
   if (await verifySaltedAdminDigest(passwordInput)) {
-    return ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail) ? "Super Admin" : "Super Admin";
+    return ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail) ? "Super Admin" : "Admin";
   }
 
   return null;
+}
+
+const ADMIN_TAB_LABELS_LOOKUP: Record<string, string> = {
+  "dashboard": "Overview Dashboard",
+  "reg-cii": "Corper Impact (CII) Registrations",
+  "reg-rma": "Right-Minds (RMA) Registrations",
+  "teen-bootcamp": "Teen Bootcamp 2026",
+  "payments": "Payments Bureau",
+  "events": "Events Manager",
+  "resources": "Resources Vault",
+  "gallery": "Photo Gallery",
+  "website-popups": "Website Popups",
+  "social-hub": "Social Hub Sync",
+  "google-forms": "Google Forms Integrator",
+  "messages": "Inbound Mailbox",
+  "testimonials": "Testimonials Desk",
+  "partners": "Sponsor Directory",
+  "lms-courses": "LMS Courses",
+  "lms-modules": "LMS Modules & Lessons",
+  "lms-students": "LMS Students",
+  "lms-payments": "LMS Course Payments",
+  "lms-enrollments": "LMS Enrollments",
+  "lms-certificates": "LMS Certificates",
+  "lms-analytics": "LMS Analytics",
+  "lms-payment-settings": "LMS Payment Settings",
+  "visitors-live": "Live Guestbook",
+  "notifications": "Alert Notifications",
+  "visitors-analytics": "Web Analytics",
+  "live-chat": "Live Chat Workspace",
+  "user-management": "Users List",
+  "security": "Admins & Access Control",
+  "brand-cloner": "Brand & Cloner Hub",
+  "activity": "Activity Trails",
+  "settings": "System Settings",
+  "prd-doc": "Specs (PRD)"
+};
+
+export async function sendAdminLoginCredentialsEmail(params: {
+  email: string;
+  fullName: string;
+  password: string;
+  role: string;
+  canWrite: boolean;
+  allowedTabs: string[];
+  createdBy?: string;
+  isPasswordUpdate?: boolean;
+}): Promise<{ success: boolean; logId: string }> {
+  const cleanEmail = params.email.trim().toLowerCase();
+  const displayName = params.fullName.trim() || cleanEmail.split("@")[0];
+  const portalUrl =
+    typeof window !== "undefined" && window.location?.origin
+      ? `${window.location.origin}/admin`
+      : "https://rightmindsafrica.org/admin";
+
+  const moduleLabels = (params.allowedTabs || []).map(
+    (tabId) => ADMIN_TAB_LABELS_LOOKUP[tabId] || tabId
+  );
+  const accessModeLabel = params.canWrite
+    ? "Read & Write (Can create, edit & manage records)"
+    : "Read-Only (View & export only)";
+
+  const subject = params.isPasswordUpdate
+    ? "Updated Administrator Login Credentials – Right Minds Africa Portal"
+    : "Your Administrator Login Credentials – Right Minds Africa Portal";
+
+  const body = `Dear ${displayName},
+
+You have been provisioned as an Administrator on the Right Minds Africa (RMA) & Corper Impact Initiative (CII) Operations Portal by the System Owner (Super Admin).
+
+Below are your official administrator login credentials and assigned permissions:
+
+* Admin Portal Login URL: ${portalUrl}
+* Login Email Address: ${cleanEmail}
+* Temporary / Login Password: ${params.password}
+* Assigned Role: ${params.role}
+* Access Permission Level: ${accessModeLabel}
+* Authorized Modules (${moduleLabels.length}): ${moduleLabels.join(", ") || "Overview Dashboard"}
+
+Access Admin Portal: ${portalUrl}
+
+How to Sign In:
+1. Click the button above or visit ${portalUrl} in your browser.
+2. Enter your Login Email Address (${cleanEmail}) and your assigned password.
+3. Once authenticated, your workspace will automatically load the ${moduleLabels.length} modules assigned to you.
+
+Security Notice:
+Please keep these login details strictly confidential and do not share your administrator password with unauthorized personnel.
+
+Regards,
+System Owner (Super Admin)
+Right Minds Africa & Corper Impact Initiative`;
+
+  const logId = `mail-admin-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+  // 1. Immediately persist to local + Firestore email logs so it is visible in System Email Logs
+  await saveEmailLog({
+    id: logId,
+    recipient: cleanEmail,
+    subject,
+    body,
+    registrationId: `ADM-${Date.now().toString().slice(-5)}`,
+    programType: "Admin Credentials",
+    status: "success",
+    sentTime: new Date().toISOString(),
+    deliveryResult: "Dispatched Administrator Login Credentials"
+  }).catch(() => null);
+
+  // 2. Dispatch real email via backend /api/email/trigger endpoint
+  let backendSuccess = true;
+  try {
+    const res = await fetch("/api/email/trigger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "ADMIN_CREATED",
+        payload: {
+          logId,
+          email: cleanEmail,
+          fullName: displayName,
+          password: params.password,
+          role: params.role,
+          canWrite: params.canWrite,
+          allowedTabs: params.allowedTabs,
+          moduleLabels,
+          portalUrl,
+          createdBy: params.createdBy || "olosundelouis@gmail.com",
+          isPasswordUpdate: !!params.isPasswordUpdate
+        }
+      })
+    });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      backendSuccess = data.success !== false;
+    }
+  } catch (err) {
+    console.warn("Admin credentials email background trigger notice:", err);
+  }
+
+  return { success: backendSuccess, logId };
 }
 
 // Save or update an Admin Operator (Super Admin Only)
@@ -1753,24 +2020,28 @@ export async function saveAdminOperator(options: {
   email: string;
   fullName?: string;
   passwordInput?: string;
+  password?: string;
   role?: "Super Admin" | "Admin" | "Editor" | "Viewer (Read Only)";
   allowedTabs?: string[];
   canWrite?: boolean;
   status?: "Active" | "Suspended";
   createdBy?: string;
+  skipWelcomeEmail?: boolean;
 }): Promise<AdminOperatorRecord> {
   const cleanEmail = options.email.trim().toLowerCase();
   if (!cleanEmail) {
     throw new Error("Administrator email is required.");
   }
 
+  const rawPassword = (options.passwordInput || options.password || "").trim();
   let passwordDigest: string | undefined = undefined;
-  if (options.passwordInput && options.passwordInput.trim()) {
-    passwordDigest = await computeSaltedPasswordDigest(options.passwordInput.trim());
+  if (rawPassword) {
+    passwordDigest = await computeSaltedPasswordDigest(rawPassword);
   }
 
   const existingList = await getAdminOperators();
   const existing = existingList.find((o) => o.email.toLowerCase() === cleanEmail);
+  const isNewOperator = !existing;
 
   const finalRole = ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail)
     ? "Super Admin"
@@ -1798,6 +2069,10 @@ export async function saveAdminOperator(options: {
     createdAt: existing?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
+
+  // Remove from deleted admin operators list if re-created or updated
+  const deletedOps = getDeletedAdminOperatorEmailsLocal().filter((e) => e !== cleanEmail);
+  saveDeletedAdminOperatorEmailsLocal(deletedOps);
 
   // 1. Update local directory cache
   if (typeof window !== "undefined") {
@@ -1857,7 +2132,7 @@ export async function saveAdminOperator(options: {
   }
 
   // 4. Sync with backend server if password was provided
-  if (options.passwordInput && options.passwordInput.trim()) {
+  if (rawPassword) {
     try {
       let token = "";
       if (typeof window !== "undefined") {
@@ -1876,7 +2151,7 @@ export async function saveAdminOperator(options: {
           body: JSON.stringify({
             email: cleanEmail,
             fullName: record.fullName,
-            password: options.passwordInput.trim(),
+            password: rawPassword,
             role: record.role,
             allowedTabs: record.allowedTabs,
             canWrite: record.canWrite
@@ -1886,13 +2161,35 @@ export async function saveAdminOperator(options: {
     } catch {}
   }
 
+  // 5. Automatically send login credentials email whenever a new admin is created or a password is set
+  if (rawPassword && !options.skipWelcomeEmail) {
+    await sendAdminLoginCredentialsEmail({
+      email: cleanEmail,
+      fullName: record.fullName || cleanEmail.split("@")[0],
+      password: rawPassword,
+      role: record.role,
+      canWrite: record.canWrite !== false,
+      allowedTabs: record.allowedTabs || [],
+      createdBy: record.createdBy,
+      isPasswordUpdate: !isNewOperator
+    }).catch((mailErr) => {
+      console.warn("Failed dispatching admin login credentials email:", mailErr);
+    });
+  }
+
   return record;
 }
 
 export async function deleteAdminOperator(email: string): Promise<void> {
   const cleanEmail = email.trim().toLowerCase();
   if (ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail)) {
-    throw new Error("System Owner / Anchor Super Admin accounts cannot be deleted.");
+    throw new Error("The System Owner / Super Admin account (olosundelouis@gmail.com) cannot be deleted.");
+  }
+
+  const deletedOps = getDeletedAdminOperatorEmailsLocal();
+  if (!deletedOps.includes(cleanEmail)) {
+    deletedOps.push(cleanEmail);
+    saveDeletedAdminOperatorEmailsLocal(deletedOps);
   }
 
   if (typeof window !== "undefined") {
@@ -2619,6 +2916,8 @@ export interface LMSCourse {
   status: "draft" | "published";
   modules: LMSModule[];
   paymentMethods?: ("paystack" | "bank_transfer")[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface LMSCourseEnrollment {
@@ -2947,6 +3246,49 @@ function saveDeletedCourseIdsLocal(ids: string[]): void {
   } catch (e) {}
 }
 
+function getCustomSavedCoursesLocal(): LMSCourse[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem("rma_custom_saved_courses");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+function saveCustomSavedCoursesLocal(courses: LMSCourse[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("rma_custom_saved_courses", JSON.stringify(courses));
+  } catch {}
+}
+
+function mergeCoursesLists(
+  lists: LMSCourse[][],
+  deletedIds: Set<string>
+): LMSCourse[] {
+  const map = new Map<string, LMSCourse>();
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const course of list) {
+      if (!course || !course.id || deletedIds.has(course.id)) continue;
+      const existing = map.get(course.id);
+      if (!existing) {
+        map.set(course.id, course);
+      } else {
+        const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+        const incomingTime = course.updatedAt ? new Date(course.updatedAt).getTime() : 0;
+        if (incomingTime >= existingTime) {
+          map.set(course.id, { ...existing, ...course });
+        }
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
 // Initialize Course seeds in localStorage only if never initialized before
 if (typeof window !== "undefined") {
   const existingCourses = localStorage.getItem("rma_lms_courses");
@@ -2962,23 +3304,28 @@ if (typeof window !== "undefined") {
 // --------------------------------------------------
 export async function getCourses(): Promise<LMSCourse[]> {
   let deletedIds = new Set<string>(getDeletedCourseIdsLocal());
-  let list: LMSCourse[] = [];
-  let hasLocalSaved = false;
+  let localList: LMSCourse[] = [];
+  const customSavedList: LMSCourse[] = getCustomSavedCoursesLocal();
+
   if (typeof window !== "undefined") {
     try {
       const saved = localStorage.getItem("rma_lms_courses");
       if (saved !== null) {
-        hasLocalSaved = true;
-        list = (JSON.parse(saved) as LMSCourse[]).filter(c => !deletedIds.has(c.id));
+        localList = (JSON.parse(saved) as LMSCourse[]).filter(c => !deletedIds.has(c.id));
       }
     } catch (e) {}
   }
+
+  const fallbackCourses = mergeCoursesLists(
+    [DEFAULT_LMS_COURSES, localList, customSavedList],
+    deletedIds
+  );
 
   const fetchFs = async (): Promise<LMSCourse[]> => {
     const { collection, getDocs, doc, getDoc, setDoc } = await import("firebase/firestore");
     const db = await getFirestoreDb();
 
-    // Sync deleted course IDs from Firestore settings/deleted_courses
+    // 1. Sync deleted course IDs from Firestore settings/deleted_courses
     try {
       const deletedSnap = await getDoc(doc(db, "settings", "deleted_courses"));
       if (deletedSnap.exists()) {
@@ -2990,43 +3337,74 @@ export async function getCourses(): Promise<LMSCourse[]> {
       }
     } catch (e) {}
 
-    const querySnapshot = await getDocs(collection(db, "courses"));
+    // 2. Read from settings/courses_settings (mirrors events/resources/gallery reliability)
+    let settingsCoursesList: LMSCourse[] = [];
+    try {
+      const settingsSnap = await getDoc(doc(db, "settings", "courses_settings"));
+      if (settingsSnap.exists()) {
+        const data = settingsSnap.data();
+        if (Array.isArray(data?.deletedIds)) {
+          data.deletedIds.forEach((id: string) => deletedIds.add(id));
+          saveDeletedCourseIdsLocal(Array.from(deletedIds));
+        }
+        if (Array.isArray(data?.list)) {
+          settingsCoursesList = (data.list as LMSCourse[]).filter(c => c && c.id && !deletedIds.has(c.id));
+        }
+      }
+    } catch (e) {}
+
+    // 3. Read from courses collection
     const fbList: LMSCourse[] = [];
-    querySnapshot.forEach((docSnap) => {
-      if (!deletedIds.has(docSnap.id)) {
-        fbList.push({ id: docSnap.id, ...docSnap.data() } as LMSCourse);
-      }
-    });
+    try {
+      const querySnapshot = await getDocs(collection(db, "courses"));
+      querySnapshot.forEach((docSnap) => {
+        if (!deletedIds.has(docSnap.id)) {
+          fbList.push({ id: docSnap.id, ...docSnap.data() } as LMSCourse);
+        }
+      });
+    } catch (e) {}
 
-    if (fbList.length > 0 || deletedIds.size > 0) {
+    // 4. Merge Default + Remote Settings + Remote Collection + Local Custom Saved Courses
+    const merged = mergeCoursesLists(
+      [
+        DEFAULT_LMS_COURSES,
+        localList,
+        settingsCoursesList,
+        fbList,
+        getCustomSavedCoursesLocal()
+      ],
+      deletedIds
+    );
+
+    if (merged.length > 0 || deletedIds.size > 0) {
       if (typeof window !== "undefined") {
-        localStorage.setItem("rma_lms_courses", JSON.stringify(fbList));
+        localStorage.setItem("rma_lms_courses", JSON.stringify(merged));
       }
-      return fbList;
-    } else {
-      // Only seed default courses when Firestore is completely empty AND no courses have been deleted
-      const seedCourses = DEFAULT_LMS_COURSES.filter(c => !deletedIds.has(c.id));
-      for (const c of seedCourses) {
-        try {
-          await setDoc(doc(db, "courses", c.id), c);
-        } catch (e) {}
+      // If Firestore had no courses yet, persist the merged list to Firestore in background
+      if (fbList.length === 0 && settingsCoursesList.length === 0 && merged.length > 0) {
+        (async () => {
+          try {
+            await setDoc(doc(db, "settings", "courses_settings"), {
+              list: JSON.parse(JSON.stringify(merged)),
+              deletedIds: Array.from(deletedIds),
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+            for (const c of merged) {
+              await setDoc(doc(db, "courses", c.id), JSON.parse(JSON.stringify(c)));
+            }
+          } catch {}
+        })();
       }
-      if (typeof window !== "undefined") {
-        localStorage.setItem("rma_lms_courses", JSON.stringify(seedCourses));
-      }
-      return seedCourses;
+      return merged;
     }
-  };
 
-  const fallbackCourses = hasLocalSaved
-    ? list.filter(c => !deletedIds.has(c.id))
-    : DEFAULT_LMS_COURSES.filter(c => !deletedIds.has(c.id));
+    return fallbackCourses;
+  };
 
   const fsTimeout = new Promise<LMSCourse[]>((resolve) =>
     setTimeout(() => {
-      console.warn("getCourses Firestore fetch timed out (4000ms), using local list");
       resolve(fallbackCourses);
-    }, 4000)
+    }, 3500)
   );
 
   try {
@@ -3039,34 +3417,85 @@ export async function getCourses(): Promise<LMSCourse[]> {
 }
 
 export async function saveCourse(course: LMSCourse): Promise<void> {
-  const deletedIds = getDeletedCourseIdsLocal().filter(id => id !== course.id);
+  // Sanitize course object to strip any undefined values (Firestore rejects undefined)
+  const sanitizedCourse: LMSCourse = JSON.parse(
+    JSON.stringify({
+      ...course,
+      price: Number.isFinite(Number(course.price)) ? Number(course.price) : 0,
+      lessonsCount: Array.isArray(course.modules)
+        ? course.modules.reduce((sum, m) => sum + (Array.isArray(m.lessons) ? m.lessons.length : 0), 0)
+        : (course.lessonsCount || 0),
+      modules: Array.isArray(course.modules) ? course.modules : [],
+      paymentMethods:
+        Array.isArray(course.paymentMethods) && course.paymentMethods.length > 0
+          ? course.paymentMethods
+          : ["paystack", "bank_transfer"],
+      createdAt: course.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+  );
+
+  const deletedIds = getDeletedCourseIdsLocal().filter(id => id !== sanitizedCourse.id);
   saveDeletedCourseIdsLocal(deletedIds);
+
+  let updatedFullList: LMSCourse[] = [];
 
   if (typeof window !== "undefined") {
     try {
+      // 1. Save in dedicated custom courses store so background snapshot/fetch never wipes it out
+      const customList = getCustomSavedCoursesLocal().filter(c => c.id !== sanitizedCourse.id);
+      customList.push(sanitizedCourse);
+      saveCustomSavedCoursesLocal(customList);
+
+      // 2. Save in primary rma_lms_courses store
       const saved = localStorage.getItem("rma_lms_courses");
-      let list: LMSCourse[] = saved ? JSON.parse(saved) : [];
-      const existingIdx = list.findIndex(c => c.id === course.id);
-      if (existingIdx >= 0) {
-        list[existingIdx] = course;
-      } else {
-        list.push(course);
-      }
-      localStorage.setItem("rma_lms_courses", JSON.stringify(list));
-      window.dispatchEvent(new Event("rma_courses_updated"));
-    } catch (e) {}
+      const currentList: LMSCourse[] = saved ? JSON.parse(saved) : [...DEFAULT_LMS_COURSES];
+      updatedFullList = mergeCoursesLists(
+        [currentList, [sanitizedCourse]],
+        new Set(deletedIds)
+      );
+      localStorage.setItem("rma_lms_courses", JSON.stringify(updatedFullList));
+    } catch (e) {
+      console.error("Local saveCourse error:", e);
+    }
   }
 
+  // 3. Persist to Firestore (`courses/{id}` AND `settings/courses_settings`)
   try {
     const { doc, setDoc } = await import("firebase/firestore");
     const db = await getFirestoreDb();
-    await setDoc(doc(db, "courses", course.id), course);
-    await setDoc(doc(db, "settings", "deleted_courses"), {
-      ids: deletedIds,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
+    await Promise.all([
+      setDoc(doc(db, "courses", sanitizedCourse.id), sanitizedCourse),
+      setDoc(
+        doc(db, "settings", "courses_settings"),
+        {
+          list: updatedFullList.length > 0 ? updatedFullList : [sanitizedCourse],
+          deletedIds,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      ),
+      setDoc(
+        doc(db, "settings", "deleted_courses"),
+        {
+          ids: deletedIds,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      )
+    ]);
   } catch (err) {
-    console.warn("Failed to sync saved course to Firestore:", err);
+    console.warn("Firestore course write deferred, queuing backup write:", err);
+    queueWrite({
+      type: "set",
+      collection: "courses",
+      docId: sanitizedCourse.id,
+      data: sanitizedCourse
+    }).catch(() => null);
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("rma_courses_updated"));
   }
 }
 
@@ -3074,13 +3503,16 @@ export async function deleteCourse(id: string): Promise<void> {
   const deletedIds = Array.from(new Set([...getDeletedCourseIdsLocal(), id]));
   saveDeletedCourseIdsLocal(deletedIds);
 
+  let updatedList: LMSCourse[] = [];
   if (typeof window !== "undefined") {
     try {
+      const customList = getCustomSavedCoursesLocal().filter(c => c.id !== id);
+      saveCustomSavedCoursesLocal(customList);
+
       const saved = localStorage.getItem("rma_lms_courses");
-      let list: LMSCourse[] = saved ? JSON.parse(saved) : [];
-      list = list.filter(c => c.id !== id);
-      localStorage.setItem("rma_lms_courses", JSON.stringify(list));
-      window.dispatchEvent(new Event("rma_courses_updated"));
+      const list: LMSCourse[] = saved ? JSON.parse(saved) : [];
+      updatedList = list.filter(c => c.id !== id);
+      localStorage.setItem("rma_lms_courses", JSON.stringify(updatedList));
     } catch (e) {}
   }
 
@@ -3089,13 +3521,30 @@ export async function deleteCourse(id: string): Promise<void> {
     const db = await getFirestoreDb();
     await Promise.all([
       deleteDoc(doc(db, "courses", id)),
-      setDoc(doc(db, "settings", "deleted_courses"), {
-        ids: deletedIds,
-        updatedAt: new Date().toISOString()
-      }, { merge: true })
+      setDoc(
+        doc(db, "settings", "courses_settings"),
+        {
+          list: updatedList,
+          deletedIds,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      ),
+      setDoc(
+        doc(db, "settings", "deleted_courses"),
+        {
+          ids: deletedIds,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      )
     ]);
   } catch (err) {
     console.warn("Failed to sync course deletion to Firestore:", err);
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("rma_courses_updated"));
   }
 }
 
@@ -4215,16 +4664,52 @@ export async function subscribeToRealtimeUpdates(): Promise<void> {
       window.dispatchEvent(new Event("rma_popups_updated"));
     }, (err) => handleSnapshotErr(err, "Website Popups"));
 
-    // 8. Courses
+    // 8. Courses (merge remote snapshot with local custom courses & deletedIds so newly added courses are never overwritten)
     onSnapshot(collection(db, "courses"), (querySnap) => {
-      const fbList: any[] = [];
+      const deletedIds = new Set(getDeletedCourseIdsLocal());
+      const fbList: LMSCourse[] = [];
       querySnap.forEach((docSnap) => {
-        fbList.push({ id: docSnap.id, ...docSnap.data() });
+        if (!deletedIds.has(docSnap.id)) {
+          fbList.push({ id: docSnap.id, ...docSnap.data() } as LMSCourse);
+        }
       });
-      console.log(`📡 [REALTIME SYNC] Courses received ${fbList.length} items from Firestore.`);
-      localStorage.setItem("rma_lms_courses", JSON.stringify(fbList));
-      window.dispatchEvent(new Event("rma_courses_updated"));
+      if (fbList.length > 0) {
+        let currentLocal: LMSCourse[] = [];
+        try {
+          const raw = localStorage.getItem("rma_lms_courses");
+          if (raw) currentLocal = JSON.parse(raw);
+        } catch {}
+        const merged = mergeCoursesLists(
+          [DEFAULT_LMS_COURSES, currentLocal, fbList, getCustomSavedCoursesLocal()],
+          deletedIds
+        );
+        localStorage.setItem("rma_lms_courses", JSON.stringify(merged));
+        window.dispatchEvent(new Event("rma_courses_updated"));
+      }
     }, (err) => handleSnapshotErr(err, "Courses"));
+
+    onSnapshot(doc(db, "settings", "courses_settings"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const deletedIds = new Set<string>([
+          ...getDeletedCourseIdsLocal(),
+          ...(Array.isArray(data?.deletedIds) ? data.deletedIds : [])
+        ]);
+        saveDeletedCourseIdsLocal(Array.from(deletedIds));
+        const settingsList: LMSCourse[] = Array.isArray(data?.list) ? data.list : [];
+        let currentLocal: LMSCourse[] = [];
+        try {
+          const raw = localStorage.getItem("rma_lms_courses");
+          if (raw) currentLocal = JSON.parse(raw);
+        } catch {}
+        const merged = mergeCoursesLists(
+          [DEFAULT_LMS_COURSES, currentLocal, settingsList, getCustomSavedCoursesLocal()],
+          deletedIds
+        );
+        localStorage.setItem("rma_lms_courses", JSON.stringify(merged));
+        window.dispatchEvent(new Event("rma_courses_updated"));
+      }
+    }, (err) => handleSnapshotErr(err, "Courses Settings"));
 
     // 9. FAQs
     onSnapshot(collection(db, "faqs"), (querySnap) => {
@@ -4770,6 +5255,7 @@ export interface PlatformUser {
 }
 
 export async function getPlatformUsers(): Promise<PlatformUser[]> {
+  const deletedOps = new Set(getDeletedAdminOperatorEmailsLocal());
   let list: PlatformUser[] = [];
 
   if (typeof window !== "undefined") {
@@ -4786,18 +5272,58 @@ export async function getPlatformUsers(): Promise<PlatformUser[]> {
     const db = await getFirestoreDb();
     const querySnapshot = await getDocs(collection(db, "users"));
     const fbList: PlatformUser[] = [];
-    querySnapshot.forEach((doc) => {
-      fbList.push({ id: doc.id, ...doc.data() } as PlatformUser);
+    querySnapshot.forEach((docSnap) => {
+      fbList.push({ id: docSnap.id, ...docSnap.data() } as PlatformUser);
     });
 
     if (fbList.length > 0) {
-      list = fbList;
-      if (typeof window !== "undefined") {
-        localStorage.setItem("rma_platform_users", JSON.stringify(list));
+      const byEmail = new Map<string, PlatformUser>();
+      for (const item of list) {
+        const key = (item.email || item.id || "").toLowerCase();
+        if (key && !deletedOps.has(key)) byEmail.set(key, item);
       }
+      for (const fbItem of fbList) {
+        const key = (fbItem.email || fbItem.id || "").toLowerCase();
+        if (key && !deletedOps.has(key)) {
+          const existing = byEmail.get(key);
+          byEmail.set(key, {
+            ...existing,
+            ...fbItem,
+            allowedTabs: fbItem.allowedTabs || existing?.allowedTabs,
+            passwordDigest: fbItem.passwordDigest || existing?.passwordDigest
+          });
+        }
+      }
+      list = Array.from(byEmail.values());
     }
   } catch (err) {
     console.warn("Could not retrieve platform users from Firestore:", err);
+  }
+
+  // Ensure editable default admins (rightmindsafrica@gmail.com, corpersimpactinitiative@gmail.com) are represented in Users List
+  for (const defOp of DEFAULT_EDITABLE_ADMIN_OPERATORS) {
+    const emailKey = defOp.email.toLowerCase();
+    if (!deletedOps.has(emailKey) && !list.some((u) => (u.email || "").toLowerCase() === emailKey)) {
+      list.push({
+        id: `usr-admin-${emailKey.split("@")[0]}`,
+        fullName: defOp.fullName || emailKey.split("@")[0],
+        email: emailKey,
+        phone: "+234 800 000 0000",
+        role: "Admin",
+        status: defOp.status === "Suspended" ? "Suspended" : "Active",
+        joinedAt: defOp.createdAt,
+        location: "HQ Operations",
+        emailVerified: true,
+        allowedTabs: defOp.allowedTabs,
+        canWrite: defOp.canWrite ?? true
+      });
+    }
+  }
+
+  if (typeof window !== "undefined" && list.length > 0) {
+    try {
+      localStorage.setItem("rma_platform_users", JSON.stringify(list));
+    } catch {}
   }
 
   return list;

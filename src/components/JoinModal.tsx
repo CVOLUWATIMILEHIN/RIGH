@@ -92,7 +92,7 @@ export default function JoinModal({ isOpen, onClose, defaultProfile = "" }: Join
     { id: "event", label: "Events & Hangouts", icon: Calendar, color: "text-rose-600 bg-rose-50 border-rose-150" },
     { id: "course", label: "Premium Courses", icon: BookOpen, color: "text-emerald-600 bg-emerald-50 border-emerald-150" },
     { id: "mentorship", label: "Mentorship", icon: Shield, color: "text-amber-600 bg-amber-50 border-amber-100" },
-    { id: "volunteer", label: "Volunteer Application", icon: Heart, color: "text-pink-600 bg-pink-50 border-pink-100" },
+    { id: "volunteer", label: "Internship Application", icon: Heart, color: "text-pink-600 bg-pink-50 border-pink-100" },
     { id: "partnership", label: "Partnership Request", icon: Sparkles, color: "text-cyan-600 bg-cyan-50 border-cyan-100" }
   ];
 

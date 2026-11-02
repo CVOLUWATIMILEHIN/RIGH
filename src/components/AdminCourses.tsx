@@ -32,6 +32,7 @@ const COURSE_CATEGORIES = [
   "Entrepreneurship",
   "NYSC Success Training",
   "Personal Development",
+  "Mindset & Transformation",
   "Financial Literacy",
   "Technology"
 ];
@@ -63,6 +64,8 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
   // Interactive mini syllabus creation
   const [modules, setModules] = useState<LMSModule[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCourses();
@@ -85,9 +88,10 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
 
   const handleOpenCreateModal = () => {
     setEditingCourse(null);
+    setFormError(null);
     setTitle("");
     setDescription("");
-    setInstructorName("");
+    setInstructorName("Olosunde Louis (Founder, RMA Hub)");
     setCategory("NYSC Success Training");
     setPrice(15000);
     setThumbnail("https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=600&q=80");
@@ -98,7 +102,7 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
       {
         id: `mod-${Date.now()}`,
         title: "Module 1: Introductory Blueprint",
-        description: "Welcome to LeftBrain Premium Academy",
+        description: "Welcome to RMA Premium Academy",
         lessons: [
           {
             id: `les-${Date.now()}`,
@@ -117,15 +121,16 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
 
   const handleOpenEditModal = (course: LMSCourse) => {
     setEditingCourse(course);
-    setTitle(course.title);
-    setDescription(course.description);
-    setInstructorName(course.instructorName);
-    setCategory(course.category);
-    setPrice(course.price);
-    setThumbnail(course.thumbnail);
-    setDuration(course.duration);
-    setLevel(course.level);
-    setStatus(course.status);
+    setFormError(null);
+    setTitle(course.title || "");
+    setDescription(course.description || "");
+    setInstructorName(course.instructorName || "RMA Academy Staff");
+    setCategory(course.category || "NYSC Success Training");
+    setPrice(Number(course.price) || 0);
+    setThumbnail(course.thumbnail || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=600&q=80");
+    setDuration(course.duration || "10 Hours");
+    setLevel(course.level || "Intermediate");
+    setStatus(course.status || "published");
     setModules(course.modules || []);
     setPaymentMethods(course.paymentMethods || ["paystack", "bank_transfer"]);
     setIsModalOpen(true);
@@ -190,12 +195,21 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
 
   const handleSaveCourse = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !description.trim()) {
-      onNotify("Title and description are required.", "error");
+    setFormError(null);
+
+    if (!title.trim()) {
+      setFormError("Please enter a course title.");
+      onNotify("Course title is required.", "error");
+      return;
+    }
+    if (!description.trim()) {
+      setFormError("Please enter a course syllabus description.");
+      onNotify("Course description is required.", "error");
       return;
     }
 
-    const lessonsCount = modules.reduce((sum, mod) => sum + mod.lessons.length, 0);
+    const lessonsCount = modules.reduce((sum, mod) => sum + (mod.lessons?.length || 0), 0);
+    const nowIso = new Date().toISOString();
 
     const targetId = editingCourse ? editingCourse.id : `course-${Date.now()}`;
     const targetCourse: LMSCourse = {
@@ -203,24 +217,45 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
       title: title.trim(),
       description: description.trim(),
       instructorName: instructorName.trim() || "RMA Academy Staff",
-      category,
-      price: Number(price),
+      category: category || "NYSC Success Training",
+      price: Number.isFinite(Number(price)) ? Number(price) : 0,
       thumbnail: thumbnail.trim() || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=600&q=80",
-      duration,
-      level,
+      duration: duration.trim() || "10 Hours",
+      level: level || "Intermediate",
       lessonsCount,
-      status,
-      modules,
-      paymentMethods: paymentMethods.length > 0 ? paymentMethods : ["paystack", "bank_transfer"]
+      status: status || "published",
+      modules: modules || [],
+      paymentMethods: paymentMethods.length > 0 ? paymentMethods : ["paystack", "bank_transfer"],
+      createdAt: editingCourse?.createdAt || nowIso,
+      updatedAt: nowIso
     };
 
+    setIsSaving(true);
     try {
+      // Optimistically update local component state immediately so the course appears right away
+      setCourses((prev) => {
+        const exists = prev.some((c) => c.id === targetCourse.id);
+        if (exists) {
+          return prev.map((c) => (c.id === targetCourse.id ? targetCourse : c));
+        }
+        return [targetCourse, ...prev];
+      });
+
       await saveCourse(targetCourse);
-      onNotify(`Course "${targetCourse.title}" saved successfully!`, "success");
+      onNotify(
+        editingCourse
+          ? `Course "${targetCourse.title}" updated successfully!`
+          : `New course "${targetCourse.title}" added and published!`,
+        "success"
+      );
       setIsModalOpen(false);
-      fetchCourses();
-    } catch (e) {
-      onNotify("Failed to save course", "error");
+      await fetchCourses();
+    } catch (err: any) {
+      const msg = err?.message || "Failed to save course.";
+      setFormError(msg);
+      onNotify(msg, "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -395,11 +430,17 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
 
             {/* Scrollable Content */}
             <form onSubmit={handleSaveCourse} className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 text-xs font-semibold">
-              
+              {formError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle size={14} />
+                  <span>{formError}</span>
+                </div>
+              )}
+
               {/* Row 1: Title and Category */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-405">Course Title</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-405">Course Title *</label>
                   <input
                     type="text"
                     required
@@ -428,7 +469,6 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-405">Instructor Name</label>
                   <input
                     type="text"
-                    required
                     value={instructorName}
                     onChange={(e) => setInstructorName(e.target.value)}
                     placeholder="e.g. Olosunde Louis"
@@ -440,7 +480,7 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-405">Pricing (NGN ₦)</label>
                   <input
                     type="number"
-                    required
+                    min={0}
                     value={price}
                     onChange={(e) => setPrice(Number(e.target.value))}
                     placeholder="Price in Naira NGN"
@@ -467,7 +507,6 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-405">Thumbnail URL Asset</label>
                   <input
                     type="text"
-                    required
                     value={thumbnail}
                     onChange={(e) => setThumbnail(e.target.value)}
                     placeholder="https://images.unsplash.com/photo-..."
@@ -479,7 +518,6 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-405">Course Duration</label>
                   <input
                     type="text"
-                    required
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
                     placeholder="e.g. 15 Hours"
@@ -839,16 +877,18 @@ export default function AdminCourses({ onNotify }: AdminCoursesProps) {
               <div className="pt-6 border-t border-slate-100 dark:border-slate-850 flex items-center justify-end gap-3 bg-white dark:bg-slate-900 sticky bottom-0 z-10 py-4">
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4.5 py-2.5 border border-slate-205 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold uppercase rounded-xl cursor-pointer"
+                  className="px-4.5 py-2.5 border border-slate-205 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold uppercase rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer shadow-sm flex items-center gap-1.5"
+                  disabled={isSaving}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  <Save size={14} /> Save Syllabus & Course
+                  <Save size={14} /> {isSaving ? "Saving Course..." : editingCourse ? "Update Syllabus & Course" : "Save & Publish Course"}
                 </button>
               </div>
 

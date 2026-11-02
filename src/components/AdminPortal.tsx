@@ -493,9 +493,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
   const isUnlocked = !!currentAdminUser;
   const currentEmail = currentAdminUser?.username || "";
   const userRole = currentAdminUser?.role || "Viewer (Read Only)";
-  const isSuperAdmin =
-    userRole === "Super Admin" ||
-    ANCHOR_SUPER_ADMIN_EMAILS.includes(currentEmail.toLowerCase().trim());
+  const isSuperAdmin = ANCHOR_SUPER_ADMIN_EMAILS.includes(currentEmail.toLowerCase().trim());
 
   const hasWriteAccess = isSuperAdmin
     ? true
@@ -601,12 +599,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       return;
     }
 
-    const anchorSuperAdmins = [
-      "olosundelouis@gmail.com", 
-      "rightmindsafrica@gmail.com", 
-      "corpersimpactinitiative@gmail.com"
-    ];
-    const isSuperAdminEmail = anchorSuperAdmins.includes(cleanEmail);
+    const isSuperAdminEmail = ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail);
     
     setIsAuthLoading(true);
     setLoginError("");
@@ -630,42 +623,101 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       let serverLockoutSeconds = 0;
       let serverErrorMsg = "";
 
-      try {
-        const serverRes = await fetch("/api/admin/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: cleanEmail, password: cleanPass })
-        });
-        const serverData = await serverRes.json().catch(() => ({}));
-        const resolvedToken = serverData?.token || serverData?.user?.token;
-        const resolvedEmail = serverData?.email || serverData?.user?.username || cleanEmail;
-        const resolvedRoleFromServer = serverData?.role || serverData?.user?.role || (isSuperAdminEmail ? "Super Admin" : "Admin");
-        const resolvedExpires = serverData?.expiresAt || serverData?.user?.expiresAt || (Date.now() + 12 * 60 * 60 * 1000);
-        const resolvedTabs = serverData?.allowedTabs || serverData?.user?.allowedTabs;
-        const resolvedWrite = typeof serverData?.canWrite === "boolean"
-          ? serverData.canWrite
-          : typeof serverData?.user?.canWrite === "boolean"
-          ? serverData.user.canWrite
-          : true;
-
-        if (serverRes.ok && serverData?.success && resolvedToken) {
-          serverSession = {
-            email: resolvedEmail,
-            fullName: serverData?.fullName || serverData?.user?.fullName,
-            role: resolvedRoleFromServer,
-            allowedTabs: Array.isArray(resolvedTabs) ? resolvedTabs : undefined,
-            canWrite: resolvedWrite,
-            token: resolvedToken,
-            expiresAt: resolvedExpires
-          };
-        } else if (serverRes.status === 429 && serverData?.lockoutSeconds) {
-          serverLockoutSeconds = Number(serverData.lockoutSeconds);
-          serverErrorMsg = serverData.error || "Too many failed login attempts.";
-        } else if (serverData?.error) {
-          serverErrorMsg = serverData.error;
+      // Check Firestore/local operator directory first for non-Super-Admin accounts so edits/suspensions take precedence
+      if (!isSuperAdminEmail) {
+        try {
+          const operatorAuth = await authenticateOperatorAccount(cleanEmail, cleanPass);
+          if (operatorAuth && operatorAuth.email) {
+            const clientSigned = await createClientSignedSession(
+              operatorAuth.email,
+              operatorAuth.role,
+              operatorAuth.allowedTabs,
+              operatorAuth.canWrite
+            );
+            serverSession = {
+              email: operatorAuth.email,
+              fullName: operatorAuth.fullName,
+              role: operatorAuth.role,
+              allowedTabs: (operatorAuth.allowedTabs as AdminTabType[]) || undefined,
+              canWrite: operatorAuth.canWrite !== false,
+              token: clientSigned.token,
+              expiresAt: clientSigned.expiresAt
+            };
+          }
+        } catch (opErr: any) {
+          if (opErr?.message && opErr.message.toLowerCase().includes("suspended")) {
+            throw opErr;
+          }
         }
-      } catch (srvErr) {
-        console.warn("Server authentication request error:", srvErr);
+      }
+
+      if (!serverSession) {
+        try {
+          const serverRes = await fetch("/api/admin/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: cleanEmail, password: cleanPass })
+          });
+          const serverData = await serverRes.json().catch(() => ({}));
+          const resolvedToken = serverData?.token || serverData?.user?.token;
+          const resolvedEmail = serverData?.email || serverData?.user?.username || cleanEmail;
+          const resolvedRoleFromServer = isSuperAdminEmail
+            ? "Super Admin"
+            : (serverData?.role === "Super Admin" ? "Admin" : (serverData?.role || serverData?.user?.role || "Admin"));
+          const resolvedExpires = serverData?.expiresAt || serverData?.user?.expiresAt || (Date.now() + 12 * 60 * 60 * 1000);
+          const resolvedTabs = serverData?.allowedTabs || serverData?.user?.allowedTabs;
+          const resolvedWrite = typeof serverData?.canWrite === "boolean"
+            ? serverData.canWrite
+            : typeof serverData?.user?.canWrite === "boolean"
+            ? serverData.user.canWrite
+            : true;
+
+          if (serverRes.ok && serverData?.success && resolvedToken) {
+            // If non-owner admin has customized permissions in getAdminOperators(), apply them
+            let finalTabs = Array.isArray(resolvedTabs) ? resolvedTabs : undefined;
+            let finalWrite = resolvedWrite;
+            let finalFullName = serverData?.fullName || serverData?.user?.fullName;
+            if (!isSuperAdminEmail) {
+              const ops = await getAdminOperators().catch(() => []);
+              const matchedOp = ops.find((o) => o.email.toLowerCase() === cleanEmail);
+              if (matchedOp) {
+                if (matchedOp.status === "Suspended") {
+                  throw new Error("Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin).");
+                }
+                // If a custom password was set on this operator, require the custom password instead of default master password
+                if (matchedOp.passwordDigest) {
+                  const opMatch = await authenticateOperatorAccount(cleanEmail, cleanPass);
+                  if (!opMatch) {
+                    throw new Error("Invalid administrative credentials. Please use your assigned administrator password.");
+                  }
+                }
+                finalTabs = (matchedOp.allowedTabs as AdminTabType[]) || finalTabs;
+                finalWrite = matchedOp.canWrite !== false;
+                finalFullName = matchedOp.fullName || finalFullName;
+              }
+            }
+
+            serverSession = {
+              email: resolvedEmail,
+              fullName: finalFullName,
+              role: resolvedRoleFromServer,
+              allowedTabs: finalTabs,
+              canWrite: finalWrite,
+              token: resolvedToken,
+              expiresAt: resolvedExpires
+            };
+          } else if (serverRes.status === 429 && serverData?.lockoutSeconds) {
+            serverLockoutSeconds = Number(serverData.lockoutSeconds);
+            serverErrorMsg = serverData.error || "Too many failed login attempts.";
+          } else if (serverData?.error) {
+            serverErrorMsg = serverData.error;
+          }
+        } catch (srvErr: any) {
+          if (srvErr?.message && (srvErr.message.includes("Suspended") || srvErr.message.includes("suspended") || srvErr.message.includes("assigned administrator password"))) {
+            throw srvErr;
+          }
+          console.warn("Server authentication request error:", srvErr);
+        }
       }
 
       // 1B. Check Operator Accounts created by Super Admin (Firestore + Local Storage + Master Key)
@@ -1024,12 +1076,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       const user = userCredential.user;
       const cleanEmail = user.email ? user.email.toLowerCase().trim() : "";
 
-      const anchorSuperAdmins = [
-        "olosundelouis@gmail.com",
-        "rightmindsafrica@gmail.com",
-        "corpersimpactinitiative@gmail.com"
-      ];
-      const isSuperAdminEmail = anchorSuperAdmins.includes(cleanEmail);
+      const isSuperAdminEmail = ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail);
 
       let resolvedRole: "Super Admin" | "Admin" | "Viewer (Read Only)" | "Editor" | "Viewer" | "Public User" = "Public User";
       let resolvedAllowedTabs: AdminTabType[] | undefined = undefined;
@@ -1426,12 +1473,14 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
 
       showFeedback(
         wasEditing
-          ? `Updated access permissions for ${cleanEmail} (${sanitizedTabs.length} modules)`
-          : `Created new Admin account for ${cleanEmail} (${sanitizedTabs.length} modules granted)`,
+          ? password
+            ? `Updated access for ${cleanEmail} and emailed their new login credentials!`
+            : `Updated access permissions for ${cleanEmail} (${sanitizedTabs.length} modules)`
+          : `Created new Admin account for ${cleanEmail} & emailed their login credentials!`,
         "success"
       );
       addTerminalLog(
-        `🛡️ [SUPER ADMIN] ${wasEditing ? "Updated" : "Created"} Admin "${cleanEmail}" with ${sanitizedTabs.length} allowed modules [${newAdminCanWrite ? "Read & Write" : "Read-Only"}].`
+        `🛡️ [SUPER ADMIN] ${wasEditing ? "Updated" : "Created"} Admin "${cleanEmail}" with ${sanitizedTabs.length} allowed modules [${newAdminCanWrite ? "Read & Write" : "Read-Only"}]${password ? " — Login credentials emailed to " + cleanEmail : ""}.`
       );
 
       await saveAuditLog({
@@ -1760,12 +1809,11 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       setDbStatus("Reconnecting...");
       addTerminalLog("🔄 [CLOUD] Initiating administrative Sync Now command...");
       
-      // 1. Clear stale cache
+      // 1. Clear stale cache (keep rma_custom_saved_courses intact so custom courses are preserved)
       if (typeof window !== "undefined") {
         localStorage.removeItem("rma_registrations");
         localStorage.removeItem("rma_notifications");
         localStorage.removeItem("rma_events");
-        localStorage.removeItem("rma_lms_courses");
         localStorage.removeItem("rma_email_logs");
       }
       addTerminalLog("🧹 [CLOUD] Local browser caches and database index tables purged successfully.");
@@ -2718,20 +2766,20 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             </div>
           </div>
 
-          {/* Volunteer Application Form & Spreadsheet Backend Toolbar */}
+          {/* Internship Application Form & Spreadsheet Backend Toolbar */}
           {activeTab !== "google-forms" && (
             <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="space-y-0.5 text-left">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-black uppercase text-[#103D2E] font-mono tracking-widest bg-[#FAF8F3] border border-[#103D2E]/10 px-2.5 py-0.5 rounded-full">
-                    Volunteer Intake Controls
+                    Internship Intake Controls
                   </span>
                   <span className="text-xs font-extrabold text-slate-800 uppercase tracking-tight">
-                    Volunteer Application Form &amp; Google Sheets
+                    Internship Application Form &amp; Google Sheets
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Manage active Volunteer Form mode, access Google Sheets (olosundelouis@gmail.com), export CSV, or view Full Screen.
+                  Manage active Internship Form mode, access Google Sheets (olosundelouis@gmail.com), export CSV, or view Full Screen.
                 </p>
               </div>
 
@@ -3100,6 +3148,9 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
                                   {showNewAdminPassword ? "HIDE" : "SHOW"}
                                 </button>
                               </div>
+                              <p className="text-[10px] text-emerald-700 font-semibold mt-1">
+                                📧 Login details (Portal URL, Email &amp; Password) will be emailed automatically to this admin.
+                              </p>
                             </div>
 
                             <div>
@@ -3398,19 +3449,17 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
                         </div>
                       </div>
 
-                      {/* Sovereign Super Admin Owners */}
+                      {/* Sovereign Super Admin Owner */}
                       <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl">
                         <h4 className="text-xs font-black uppercase text-slate-800 tracking-wide mb-1.5">
-                          👑 Sovereign System Owners (Super Admins)
+                          👑 Sovereign System Owner (Super Admin)
                         </h4>
                         <p className="text-[10.5px] text-slate-500 leading-relaxed mb-3">
-                          Protected owner identities with permanent unrestricted access to all modules and admin provisioning.
+                          Sole protected System Owner identity with permanent unrestricted access to all modules and full authority to edit all other Admins.
                         </p>
                         <div className="space-y-2 font-mono text-slate-800">
                           {[
-                            { email: "olosundelouis@gmail.com", role: "System Owner / Primary Super Admin 👑" },
-                            { email: "rightmindsafrica@gmail.com", role: "Super Admin 🛡️" },
-                            { email: "corpersimpactinitiative@gmail.com", role: "Super Admin 🛡️" }
+                            { email: "olosundelouis@gmail.com", role: "System Owner / Sole Super Admin 👑" }
                           ].map((ad) => (
                             <div
                               key={ad.email}

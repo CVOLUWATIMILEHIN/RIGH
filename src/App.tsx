@@ -115,6 +115,18 @@ function resolveViewFromUrl(): string {
     return "teen-bootcamp";
   }
   if (
+    path === "/internship" ||
+    path === "/internships" ||
+    path === "/intern" ||
+    path === "/internship-application" ||
+    path === "/apply-for-internship" ||
+    path.startsWith("/internship") ||
+    hash === "#/internship" ||
+    hash === "#/internship-application" ||
+    hash.includes("internship") ||
+    search.includes("internship") ||
+    queryView === "internship" ||
+    queryView === "internship-application" ||
     path === "/volunteer" ||
     path === "/volunteer-application" ||
     path === "/apply-to-volunteer" ||
@@ -231,8 +243,8 @@ export default function App() {
         window.history.pushState(null, "", "/teen-bootcamp");
       }
     } else if (currentView === "volunteer-application" || currentView === "get-involved-volunteer") {
-      if (window.location.pathname.toLowerCase() !== "/volunteer-application") {
-        window.history.pushState(null, "", "/volunteer-application");
+      if (window.location.pathname.toLowerCase() !== "/internship") {
+        window.history.pushState(null, "", "/internship");
       }
     } else if (currentView === "home") {
       if (window.location.pathname.toLowerCase() !== "/" && window.location.pathname.toLowerCase() !== "/index.html") {

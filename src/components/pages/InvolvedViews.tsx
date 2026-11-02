@@ -295,7 +295,7 @@ export default function InvolvedViews({ subView, onNavigate, onOpenJoin }: Invol
             <ChevronRight size={12} />
             <span className="font-semibold text-slate-905">Get Involved</span>
             <ChevronRight size={12} />
-            <span className="font-semibold text-amber-550 capitalize">{subView}</span>
+            <span className="font-semibold text-amber-550 capitalize">{subView === "volunteer" ? "Internship" : subView}</span>
           </div>
         </div>
 
@@ -310,7 +310,7 @@ export default function InvolvedViews({ subView, onNavigate, onOpenJoin }: Invol
           >
             <span>
               {subView === "community" && "Join Our Fast-Growing Community"}
-              {subView === "volunteer" && "Career Opportunities & Applications"}
+              {subView === "volunteer" && "Internship & Career Applications"}
               {subView === "partner" && "Partner With Our Agency"}
               {subView === "donate" && "Direct Donation & Support"}
             </span>
@@ -327,7 +327,7 @@ export default function InvolvedViews({ subView, onNavigate, onOpenJoin }: Invol
               >
                 {[
                   { label: "Community", view: "get-involved-community" },
-                  { label: "Opportunities & Applications", view: "get-involved-volunteer" },
+                  { label: "Internship & Applications", view: "get-involved-volunteer" },
                   { label: "Partnership", view: "get-involved-partner" },
                   { label: "Direct Donation & Support", view: "get-involved-donate" }
                 ].map((option) => {
@@ -361,13 +361,13 @@ export default function InvolvedViews({ subView, onNavigate, onOpenJoin }: Invol
           </span>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 font-display uppercase tracking-tight">
             {subView === "community" && "Join Our Fast-Growing Community"}
-            {subView === "volunteer" && "Opportunities Portal"}
+            {subView === "volunteer" && "Internship Portal"}
             {subView === "partner" && "Partner With Our Agency"}
             {subView === "donate" && "Direct Donation & Support"}
           </h1>
           <p className="text-slate-600 text-sm sm:text-base leading-relaxed font-normal">
             {subView === "community" && "Connect with a tribe of over 250+ highly motivated, purpose-driven youth scaling regional commands."}
-            {subView === "volunteer" && "Onboard as a physical volunteer, apply for internships, facilitator roles, or represent as campus ambassador."}
+            {subView === "volunteer" && "Apply for internships, facilitator roles, or represent as a campus ambassador."}
             {subView === "partner" && "Integrate your corporate values, sponsor specialized upskilling bootcamps, or secure recruitment channels."}
             {subView === "donate" && "Directly sponsor workbook printouts for teens, upskilling licenses for graduates, or general operating audits."}
           </p>

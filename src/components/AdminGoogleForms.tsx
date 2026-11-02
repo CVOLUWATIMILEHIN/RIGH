@@ -631,13 +631,13 @@ export default function AdminGoogleForms({ hasWriteAccess, onLogAction }: AdminG
         </div>
       )}
 
-      {/* 2B. Volunteer Application Intake & Spreadsheet Backend Control Bar */}
+      {/* 2B. Internship Application Intake & Spreadsheet Backend Control Bar */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5 text-left">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-5">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] font-black uppercase text-[#103D2E] font-mono tracking-widest bg-[#FAF8F3] border border-[#103D2E]/10 px-3 py-1 rounded-full">
-                Volunteer Intake Backend Controls
+                Internship Intake Backend Controls
               </span>
               <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -645,10 +645,10 @@ export default function AdminGoogleForms({ hasWriteAccess, onLogAction }: AdminG
               </span>
             </div>
             <h3 className="font-display font-black text-base text-slate-800 uppercase tracking-tight">
-              Volunteer Application Form &amp; Spreadsheet Controls
+              Internship Application Form &amp; Spreadsheet Controls
             </h3>
             <p className="text-xs text-slate-500">
-              Switch the public Volunteer page between Google Form and Direct Form, open the connected Google Sheet, export CSV submissions, or preview in Full Screen.
+              Switch the public Internship page between Google Form and Direct Form, open the connected Google Sheet, export CSV submissions, or preview in Full Screen.
             </p>
           </div>
 

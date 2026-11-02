@@ -30,8 +30,8 @@ export const VOLUNTEER_ROLES = [
     roles: [
       { id: "Programme Coordinator", label: "Programme Coordinator", desc: "Supports programme planning, scheduling, team coordination and execution." },
       { id: "WhatsApp Community Manager", label: "WhatsApp Community Manager", desc: "Welcomes members, shares approved updates, encourages engagement and moderates discussions." },
-      { id: "Community Engagement Volunteer", label: "Community Engagement Volunteer", desc: "Supports outreach, member engagement and community growth." },
-      { id: "Research and Documentation Volunteer", label: "Research and Documentation Volunteer", desc: "Researches relevant topics and documents programme activities and outcomes." }
+      { id: "Community Engagement Intern", label: "Community Engagement Intern", desc: "Supports outreach, member engagement and community growth." },
+      { id: "Research and Documentation Intern", label: "Research and Documentation Intern", desc: "Researches relevant topics and documents programme activities and outcomes." }
     ]
   },
   {
@@ -39,9 +39,9 @@ export const VOLUNTEER_ROLES = [
     roles: [
       { id: "Public Speaker / Event Host", label: "Public Speaker / Event Host", desc: "Hosts events, introduces speakers and engages audiences." },
       { id: "Event Moderator", label: "Event Moderator", desc: "Facilitates discussions, manages Q&A sessions and maintains productive conversations." },
-      { id: "Event Support Volunteer", label: "Event Support Volunteer", desc: "Assists with event planning, registration, logistics and coordination." },
-      { id: "Outreach and Partnership Volunteer", label: "Outreach and Partnership Volunteer", desc: "Identifies potential collaborators and supports partnership development." },
-      { id: "Administrative / Operations Volunteer", label: "Administrative / Operations Volunteer", desc: "Assists with scheduling, records and internal coordination." }
+      { id: "Event Support Intern", label: "Event Support Intern", desc: "Assists with event planning, registration, logistics and coordination." },
+      { id: "Outreach and Partnership Intern", label: "Outreach and Partnership Intern", desc: "Identifies potential collaborators and supports partnership development." },
+      { id: "Administrative / Operations Intern", label: "Administrative / Operations Intern", desc: "Assists with scheduling, records and internal coordination." }
     ]
   },
   {
@@ -188,7 +188,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
 
   const handleCopyLink = () => {
     if (typeof window !== "undefined") {
-      navigator.clipboard.writeText(window.location.origin + "/volunteer-application");
+      navigator.clipboard.writeText(window.location.origin + "/internship");
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
     }
@@ -354,7 +354,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
 
     // Section B
     if (!primaryRole) {
-      errors.primaryRole = "Please select a primary volunteer role.";
+      errors.primaryRole = "Please select a primary internship role.";
     }
 
     if (selectedSkills.length === 0) {
@@ -362,7 +362,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     }
 
     if (!whyVolunteer.trim()) {
-      errors.whyVolunteer = "Please explain why you want to volunteer with Right-Minds Africa Hub.";
+      errors.whyVolunteer = "Please explain why you want to intern with Right-Minds Africa Hub.";
     }
 
     if (!valueBrought.trim()) {
@@ -389,7 +389,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     }
 
     if (!consentAgreed) {
-      errors.consentAgreed = "You must agree to the volunteer application privacy notice.";
+      errors.consentAgreed = "You must agree to the internship application privacy notice.";
     }
 
     setFieldErrors(errors);
@@ -418,10 +418,10 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
         phone: phone.trim(),
         location: location.trim(),
         profileType: "volunteer",
-        programType: "volunteer",
-        programName: "Volunteer Application",
+        programType: "internship",
+        programName: "Internship Application",
         department: primaryRole,
-        notes: `[Volunteer Application] Primary Role: ${primaryRole}${secondaryRole ? ` | Second Choice: ${secondaryRole}` : ""} | Contact Method: ${contactMethod} | Video: ${videoUrl.trim()}`
+        notes: `[Internship Application] Primary Role: ${primaryRole}${secondaryRole ? ` | Second Choice: ${secondaryRole}` : ""} | Contact Method: ${contactMethod} | Video: ${videoUrl.trim()}`
       });
 
       const portalApp = await savePortalApplication({
@@ -502,7 +502,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           </div>
 
           <div className="p-5 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl text-emerald-900 text-sm sm:text-base leading-relaxed font-medium">
-            Thank you for applying to volunteer with Right-Minds Africa Hub! Your application has been submitted successfully. Our team will review your information and contact you regarding the next steps.
+            Thank you for applying for an internship with Right-Minds Africa Hub! Your application has been submitted successfully. Our team will review your information and contact you regarding the next steps.
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
@@ -578,7 +578,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           <div className="w-full bg-[#FAF8F3] border border-[#0E3A2F]/15 rounded-3xl p-6 sm:p-10 md:p-12 lg:p-14 text-left space-y-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <span className="text-[10px] font-black uppercase text-amber-700 bg-amber-500/10 border border-amber-500/20 px-3.5 py-1.5 rounded-full font-mono">
-                ✨ Become a Volunteer
+                ✨ Apply for Internship
               </span>
             </div>
 
@@ -588,7 +588,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
 
             <div className="w-full max-w-5xl space-y-4 text-slate-700 text-sm sm:text-base md:text-lg leading-relaxed font-normal">
               <p>
-                At Right-Minds Africa Hub, we believe that meaningful change happens when people use their skills, knowledge and passion to empower others. We are building a team of committed volunteers who want to develop young people, strengthen our programmes and create lasting impact across Africa.
+                At Right-Minds Africa Hub, we believe that meaningful change happens when people use their skills, knowledge and passion to empower others. We are building a team of committed interns who want to develop young people, strengthen our programmes and create lasting impact across Africa.
               </p>
               <p>
                 Whether you are a creative professional, communicator, event organiser, community builder or someone willing to contribute and learn, there may be a place for you on our team.
@@ -601,7 +601,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                 onClick={scrollToForm}
                 className="px-8 py-4 bg-[#0E3A2F] hover:bg-[#0c3127] text-white text-xs sm:text-sm font-black uppercase tracking-wider rounded-2xl cursor-pointer transition-all inline-flex items-center gap-2.5 shadow-md hover:shadow-lg"
               >
-                <span>Apply to Volunteer</span>
+                <span>Apply for Internship</span>
                 <ArrowRight size={16} />
               </button>
 
@@ -618,18 +618,18 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           </div>
 
           {/* =========================================================================
-              2. VOLUNTEER ROLES SHOWCASE (Full Width Across All Columns)
+              2. INTERNSHIP ROLES SHOWCASE (Full Width Across All Columns)
               ========================================================================= */}
           <div className="w-full space-y-8 text-left">
             <div className="border-l-4 border-[#0E3A2F] pl-4">
               <span className="text-[10px] font-black uppercase text-[#0E3A2F] font-mono tracking-widest bg-[#FAF8F3] border border-[#0E3A2F]/10 px-3 py-1 rounded-full">
-                💼 Volunteer Roles
+                💼 Internship Roles
               </span>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display uppercase tracking-tight mt-2">
                 Explore Where You Can Make an Impact
               </h2>
               <p className="text-xs sm:text-sm text-slate-600 mt-1">
-                We are recruiting committed leaders across three key divisions. Review the opportunities below, then complete the Google Form to apply.
+                We are recruiting committed interns across three key divisions. Review the opportunities below, then complete the application form to apply.
               </p>
             </div>
 
@@ -703,7 +703,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                       Welcomes members, shares approved updates, and moderates discussions.
                     </li>
                     <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">8. Community Engagement Volunteer</strong>
+                      <strong className="block text-slate-900 text-xs font-bold">8. Community Engagement Intern</strong>
                       Supports outreach, member engagement and community growth.
                     </li>
                     <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
@@ -746,11 +746,11 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                       Facilitates discussions, manages Q&A sessions and maintains conversations.
                     </li>
                     <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">12. Event Support Volunteer</strong>
+                      <strong className="block text-slate-900 text-xs font-bold">12. Event Support Intern</strong>
                       Assists with event planning, registration, logistics and coordination.
                     </li>
                     <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">13. Outreach & Partnership Volunteer</strong>
+                      <strong className="block text-slate-900 text-xs font-bold">13. Outreach & Partnership Intern</strong>
                       Identifies potential collaborators and supports partnership development.
                     </li>
                     <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
@@ -762,7 +762,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                 <button
                   type="button"
                   onClick={() => {
-                    setPrimaryRole("Event Support Volunteer");
+                    setPrimaryRole("Event Support Intern");
                     scrollToForm();
                   }}
                   className="w-full py-3 bg-slate-100 hover:bg-[#0E3A2F] hover:text-white text-slate-800 text-xs font-extrabold uppercase tracking-wider rounded-xl cursor-pointer transition-all"
@@ -774,58 +774,60 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           </div>
 
           {/* =========================================================================
-              3. GOOGLE FORM APPLICATION CONTAINER (Full Screen Width — Not Shrunk)
+              3. NATIVE IN-PAGE APPLICATION CONTAINER (Seamless, Full Width, Responsive)
               ========================================================================= */}
-          <div id="volunteer-application-form" className="w-full bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 md:p-10 lg:p-12 text-left space-y-8 scroll-mt-20">
-            
-            {/* Top Header */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-100 pb-6">
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-black uppercase text-[#0E3A2F] font-mono tracking-widest bg-[#FAF8F3] border border-[#0E3A2F]/10 px-3 py-1.5 rounded-full">
-                    📝 Official Volunteer Application
-                  </span>
-                </div>
-                <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 uppercase tracking-tight">
-                  Volunteer Intake Form
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-600">
-                  Complete the official application form below to join the Right-Minds Africa Hub volunteer team.
-                </p>
-              </div>
-            </div>
-
-            {/* Google Form Mode (Primary — Full Screen Width, No Shrinking) */}
+          <div
+            id="volunteer-application-form"
+            className={`w-full bg-white rounded-3xl border border-slate-200/80 shadow-sm text-left scroll-mt-20 overflow-hidden ${
+              formMode === "google_form" ? "p-0" : "p-6 sm:p-8 md:p-10 lg:p-12 space-y-8"
+            }`}
+          >
             {formMode === "google_form" ? (
-              <div className="w-full space-y-4">
-                <div className="w-full relative min-h-[5096px] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                  {isIframeLoading && (
-                    <div className="absolute inset-x-0 top-0 h-96 flex flex-col items-center justify-center bg-white/95 z-10 gap-3">
-                      <Loader2 size={32} className="animate-spin text-[#0E3A2F]" />
-                      <p className="text-xs font-bold text-slate-600 uppercase tracking-wider font-mono">
-                        Loading Official Google Form...
-                      </p>
-                    </div>
-                  )}
-                  
-                  <iframe
-                    src={getEmbedUrl(googleFormUrl)}
-                    width="100%"
-                    height="5096"
-                    frameBorder="0"
-                    marginHeight={0}
-                    marginWidth={0}
-                    onLoad={() => setIsIframeLoading(false)}
-                    className="w-full min-h-[5096px] bg-white border-0"
-                    title="Right-Minds Africa Hub Volunteer Application"
-                  >
-                    Loading…
-                  </iframe>
-                </div>
+              /* Native In-Page Google Form Embed — Seamless, Flush Container, Zero Extra Padding/Headers */
+              <div className="w-full relative min-h-[5096px] bg-white overflow-x-hidden">
+                <div className="h-1.5 w-full bg-gradient-to-r from-[#0E3A2F] via-emerald-700 to-amber-500" />
+                {isIframeLoading && (
+                  <div className="absolute inset-x-0 top-1.5 h-96 flex flex-col items-center justify-center bg-white/95 z-10 gap-3">
+                    <Loader2 size={32} className="animate-spin text-[#0E3A2F]" />
+                    <p className="text-xs font-bold text-slate-600 uppercase tracking-wider font-mono">
+                      Loading Internship Application Form...
+                    </p>
+                  </div>
+                )}
+
+                <iframe
+                  src={getEmbedUrl(googleFormUrl)}
+                  width="100%"
+                  height="5096"
+                  frameBorder="0"
+                  marginHeight={0}
+                  marginWidth={0}
+                  scrolling="no"
+                  onLoad={() => setIsIframeLoading(false)}
+                  className="block w-full min-h-[5096px] bg-white border-0 m-0 p-0 overflow-x-hidden"
+                  title="Right-Minds Africa Hub Internship Application"
+                >
+                  Loading…
+                </iframe>
               </div>
             ) : (
               /* Direct Interactive Form Mode (100% Full Width) */
-              <div className="w-full">
+              <div className="w-full space-y-8">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-100 pb-6">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black uppercase text-[#0E3A2F] font-mono tracking-widest bg-[#FAF8F3] border border-[#0E3A2F]/10 px-3 py-1.5 rounded-full">
+                        📝 Official Internship Application
+                      </span>
+                    </div>
+                    <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 uppercase tracking-tight">
+                      Internship Intake Form
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-600">
+                      Complete the official application form below to join the Right-Minds Africa Hub internship team.
+                    </p>
+                  </div>
+                </div>
                 {submitError && (
                   <div className="p-4 mb-6 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl flex items-center gap-2.5 font-medium animate-fadeIn">
                     <AlertCircle size={16} className="shrink-0" />
@@ -946,14 +948,14 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                         B
                       </span>
                       <h4 className="font-extrabold text-sm sm:text-base text-slate-900 uppercase tracking-wide">
-                        Section B — Volunteer Interests
+                        Section B — Internship Interests
                       </h4>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                       <div className="space-y-1.5" data-error-field="primaryRole">
                         <label className="text-2xs font-black uppercase tracking-wider text-slate-600">
-                          6. Primary Volunteer Role <span className="text-rose-500">*</span>
+                          6. Primary Internship Role <span className="text-rose-500">*</span>
                         </label>
                         <select
                           value={primaryRole}
@@ -974,7 +976,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
 
                       <div className="space-y-1.5">
                         <label className="text-2xs font-black uppercase tracking-wider text-slate-600">
-                          7. Secondary Volunteer Role (Optional)
+                          7. Secondary Internship Role (Optional)
                         </label>
                         <select
                           value={secondaryRole}
@@ -1024,7 +1026,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                       <div className="space-y-1.5" data-error-field="whyVolunteer">
                         <label className="text-2xs font-black uppercase tracking-wider text-slate-600">
-                          10. Why do you want to volunteer? <span className="text-rose-500">*</span>
+                          10. Why do you want to intern with us? <span className="text-rose-500">*</span>
                         </label>
                         <textarea
                           rows={3}
@@ -1131,7 +1133,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                         className="mt-0.5 w-4 h-4 rounded text-[#0E3A2F]"
                       />
                       <span className="text-xs text-slate-700 font-medium">
-                        16. I have read and agree to the volunteer application privacy notice. <span className="text-rose-500">*</span>
+                        16. I have read and agree to the internship application privacy notice. <span className="text-rose-500">*</span>
                       </span>
                     </label>
                   </div>
@@ -1143,7 +1145,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                       className="px-8 py-4 bg-[#0E3A2F] hover:bg-[#0c3127] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md inline-flex items-center gap-2"
                     >
                       {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
-                      <span>Submit Volunteer Application</span>
+                      <span>Submit Internship Application</span>
                     </button>
                   </div>
                 </form>
@@ -1153,93 +1155,6 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           </div>
         </>
       )}
-
-      {/* =========================================================================
-          CONFIG MODAL: UPDATE GOOGLE FORM LINK (Connected to olosundelouis@gmail.com)
-          ========================================================================= */}
-      <AnimatePresence>
-        {showConfigModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 max-w-lg w-full text-left shadow-2xl space-y-5"
-            >
-              <div className="flex items-center justify-between border-b pb-3">
-                <div className="flex items-center gap-2">
-                  <Settings size={18} className="text-[#0E3A2F]" />
-                  <h3 className="font-extrabold text-sm uppercase tracking-wide text-slate-900">
-                    Connect Your Google Form
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowConfigModal(false)}
-                  className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-                >
-                  &times;
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs text-slate-650 leading-relaxed">
-                <p>
-                  Paste the link to your Google Form created on <strong>{CONNECTED_GOOGLE_EMAIL}</strong>. Responses will be collected through this form and automatically populated into your Google Sheets spreadsheet.
-                </p>
-                
-                <form onSubmit={handleSaveCustomFormUrl} className="space-y-4 pt-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 font-mono">
-                      Google Form Link or ID:
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={customUrlInput}
-                      onChange={(e) => setCustomUrlInput(e.target.value)}
-                      placeholder="https://docs.google.com/forms/d/e/.../viewform"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs bg-slate-50 text-slate-900 font-mono focus:outline-none focus:ring-1 focus:ring-[#0E3A2F]"
-                    />
-                  </div>
-
-                  {configSuccess && (
-                    <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
-                      <CheckCircle2 size={14} className="text-emerald-600" />
-                      <span>Google Form link updated successfully!</span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setCustomUrlInput(DEFAULT_GOOGLE_FORM_URL)}
-                      className="text-3xs text-slate-500 hover:text-slate-800 underline font-bold"
-                    >
-                      Reset to default
-                    </button>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowConfigModal(false)}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-5 py-2 bg-[#0E3A2F] hover:bg-[#0c3127] text-white text-xs font-bold rounded-xl"
-                      >
-                        Save & Embed
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* =========================================================================
           PRIVACY NOTICE MODAL
@@ -1257,7 +1172,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                 <div className="flex items-center gap-2">
                   <ShieldCheck size={18} className="text-[#0E3A2F]" />
                   <h3 className="font-extrabold text-sm uppercase tracking-wide text-slate-900">
-                    Volunteer Application Privacy Notice
+                    Internship Application Privacy Notice
                   </h3>
                 </div>
                 <button
@@ -1274,7 +1189,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                   <strong>Right-Minds Africa Hub</strong> is committed to handling your personal data responsibly, respectfully, and securely.
                 </p>
                 <p>
-                  <strong>How we use your data:</strong> The personal information, skills, video link, and contact details you provide in this form are gathered exclusively for evaluating your suitability for open volunteer tracks and contacting you regarding the application process.
+                  <strong>How we use your data:</strong> The personal information, skills, video link, and contact details you provide in this form are gathered exclusively for evaluating your suitability for open internship tracks and contacting you regarding the application process.
                 </p>
                 <p>
                   <strong>Confidentiality:</strong> Your responses are accessible only to authorised administrative coordinators and team leads. We never sell, rent, or distribute candidate records to commercial third parties.
@@ -1295,59 +1210,6 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
               </div>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
-
-      {/* =========================================================================
-          FULL-SCREEN GOOGLE FORM MODAL (Fills the entire viewport: 100vw x 100vh)
-          ========================================================================= */}
-      <AnimatePresence>
-        {isFullScreenIframe && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-md flex flex-col"
-          >
-            {/* Fullscreen header */}
-            <div className="w-full bg-[#0E3A2F] text-white px-4 sm:px-6 py-3.5 flex items-center justify-between shadow-md">
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-black uppercase text-amber-300 font-mono tracking-widest bg-white/10 px-2.5 py-1 rounded-md">
-                  Fullscreen Mode
-                </span>
-                <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wide">
-                  Right-Minds Africa Hub — Volunteer Application
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsFullScreenIframe(false)}
-                  className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer"
-                >
-                  <Minimize2 size={13} />
-                  <span>Exit Fullscreen</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Fullscreen iframe container */}
-            <div className="flex-1 w-full bg-white relative">
-              <iframe
-                src={getEmbedUrl(googleFormUrl)}
-                width="100%"
-                height="100%"
-                frameBorder="0"
-                marginHeight={0}
-                marginWidth={0}
-                className="w-full h-full bg-white border-0"
-                title="Right-Minds Africa Hub Volunteer Application Fullscreen"
-              >
-                Loading Google Form...
-              </iframe>
-            </div>
-          </motion.div>
         )}
       </AnimatePresence>
     </div>

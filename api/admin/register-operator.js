@@ -1,9 +1,7 @@
 import crypto from "crypto";
 
 const ANCHOR_SUPER_ADMINS = new Set([
-  "olosundelouis@gmail.com",
-  "rightmindsafrica@gmail.com",
-  "corpersimpactinitiative@gmail.com"
+  "olosundelouis@gmail.com"
 ]);
 
 const ADMIN_TOKEN_SECRET =

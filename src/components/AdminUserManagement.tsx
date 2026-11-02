@@ -56,6 +56,32 @@ const DEFAULT_USERS: PlatformUser[] = [
     canWrite: true
   },
   {
+    id: "usr-admin-rightmindsafrica",
+    fullName: "Right Minds Africa Admin",
+    email: "rightmindsafrica@gmail.com",
+    phone: "+234 800 000 0001",
+    role: "Admin",
+    status: "Active",
+    joinedAt: "2026-05-01T10:00:00.000Z",
+    location: "HQ Operations",
+    emailVerified: true,
+    allowedTabs: [...DEFAULT_LIMITED_ADMIN_TABS],
+    canWrite: true
+  },
+  {
+    id: "usr-admin-corpersimpactinitiative",
+    fullName: "Corper Impact Initiative Admin",
+    email: "corpersimpactinitiative@gmail.com",
+    phone: "+234 800 000 0002",
+    role: "Admin",
+    status: "Active",
+    joinedAt: "2026-05-01T10:05:00.000Z",
+    location: "HQ Operations",
+    emailVerified: true,
+    allowedTabs: [...DEFAULT_LIMITED_ADMIN_TABS],
+    canWrite: true
+  },
+  {
     id: "usr-1",
     fullName: "Adebayo Adesina",
     email: "a.adesina@gmail.com",
@@ -341,11 +367,20 @@ export default function AdminUserManagement({
         await savePlatformUser(userRecord);
       }
 
+      const sentCredentialsMail = isAdminOrStaffRole && isSuperAdmin && formData.password.trim().length > 0;
       onLogAction(
         editingUser
-          ? `👥 [USERS] Super Admin updated ${formData.fullName} (${cleanEmail}) — Role: ${formData.role}, Modules: ${formData.allowedTabs.length}, Write: ${formData.canWrite}`
-          : `👥 [USERS] Super Admin created new ${formData.role}: ${formData.fullName} (${cleanEmail}) with access to ${formData.allowedTabs.length} modules`
+          ? `👥 [USERS] Super Admin updated ${formData.fullName} (${cleanEmail}) — Role: ${formData.role}, Modules: ${formData.allowedTabs.length}, Write: ${formData.canWrite}${sentCredentialsMail ? " [Login Credentials Emailed]" : ""}`
+          : `👥 [USERS] Super Admin created new ${formData.role}: ${formData.fullName} (${cleanEmail}) with access to ${formData.allowedTabs.length} modules${sentCredentialsMail ? " & emailed login details" : ""}`
       );
+      if (sentCredentialsMail) {
+        setResendStatus({
+          id: editingUser?.id || "new-admin",
+          success: true,
+          message: `Login details emailed to ${cleanEmail}!`
+        });
+        setTimeout(() => setResendStatus(null), 5000);
+      }
       setIsModalOpen(false);
       await loadUsers();
     } catch (err: any) {

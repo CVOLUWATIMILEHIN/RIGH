@@ -1,9 +1,7 @@
 import crypto from "crypto";
 
 const ANCHOR_SUPER_ADMINS = new Set([
-  "olosundelouis@gmail.com",
-  "rightmindsafrica@gmail.com",
-  "corpersimpactinitiative@gmail.com"
+  "olosundelouis@gmail.com"
 ]);
 
 const ADMIN_TOKEN_SECRET =
@@ -89,7 +87,7 @@ export default async function handler(req, res) {
 
     let matchedRole = null;
     if (isMasterAdminPassword(rawPassword)) {
-      matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : "Super Admin";
+      matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : "Admin";
     }
 
     if (!matchedRole) {

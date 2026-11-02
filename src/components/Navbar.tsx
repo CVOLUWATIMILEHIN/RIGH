@@ -176,9 +176,9 @@ const SEARCH_DATABASE: SearchResult[] = [
     view: "impact-stories"
   },
   {
-    title: "Volunteer & Partner",
+    title: "Internship & Partner",
     category: "resource",
-    description: "Apply as a volunteer, mentor, facilitator, or corporate partner with Right Minds Africa.",
+    description: "Apply as an intern, mentor, facilitator, or corporate partner with Right Minds Africa.",
     view: "get-involved-volunteer"
   },
 
@@ -202,9 +202,9 @@ const SEARCH_DATABASE: SearchResult[] = [
     view: "resources-faqs"
   },
   {
-    title: "Can I join as a Mentor or Volunteer partner?",
+    title: "Can I join as a Mentor or Internship partner?",
     category: "faq",
-    description: "Yes! Young professionals and corporate partners can apply under the Volunteer option.",
+    description: "Yes! Young professionals and corporate partners can apply under the Internship option.",
     view: "resources-faqs"
   },
   {
@@ -372,7 +372,7 @@ export default function Navbar({
           heading: "Get Involved",
           items: [
             { label: "Join Community", view: "get-involved-community", description: "Register into local command cohorts" },
-            { label: "Volunteer", view: "get-involved-volunteer", description: "Contribute skills to executive departments" },
+            { label: "Internship", view: "get-involved-volunteer", description: "Apply for internships across executive departments" },
             { label: "Partner With Us", view: "get-involved-partner", description: "Corporate and institutional alliances" },
             { label: "Donate", view: "get-involved-donate", description: "Support youth education scholarships" }
           ]
