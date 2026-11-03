@@ -32,6 +32,12 @@ const ANCHOR_SUPER_ADMINS = new Set([
   "olosundelouis@gmail.com"
 ]);
 
+const SEEDED_ADMIN_EMAILS = new Set([
+  "olosundelouis@gmail.com",
+  "rightmindsafrica@gmail.com",
+  "corpersimpactinitiative@gmail.com"
+]);
+
 const ADMIN_TOKEN_SECRET =
   process.env.ADMIN_SESSION_SECRET ||
   process.env.ADMIN_TOKEN_SECRET ||
@@ -93,15 +99,17 @@ export default async function handler(req, res) {
           }
         } catch {}
       }
-      if (!resolvedRole && body.role && body.role !== "Public User") {
-        resolvedRole = body.role;
+      if (!resolvedRole && SEEDED_ADMIN_EMAILS.has(rawEmail)) {
+        resolvedRole = "Admin";
         allowedTabs = Array.isArray(body.allowedTabs) ? body.allowedTabs : undefined;
         canWrite = typeof body.canWrite === "boolean" ? body.canWrite : true;
       }
     }
 
     if (!resolvedRole || resolvedRole === "Public User") {
-      return res.status(403).json({ error: "Account is not authorized for administrative console access." });
+      return res.status(403).json({
+        error: `Access Denied: The email "${rawEmail}" is not registered as an Administrator.`
+      });
     }
 
     const { token, expiresAt } = signAdminSessionToken(rawEmail, resolvedRole, allowedTabs, canWrite);

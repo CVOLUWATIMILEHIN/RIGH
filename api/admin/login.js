@@ -32,6 +32,12 @@ const ANCHOR_SUPER_ADMINS = new Set([
   "olosundelouis@gmail.com"
 ]);
 
+const SEEDED_ADMIN_EMAILS = new Set([
+  "olosundelouis@gmail.com",
+  "rightmindsafrica@gmail.com",
+  "corpersimpactinitiative@gmail.com"
+]);
+
 const ADMIN_TOKEN_SECRET =
   process.env.ADMIN_SESSION_SECRET ||
   process.env.ADMIN_TOKEN_SECRET ||
@@ -109,8 +115,12 @@ export default async function handler(req, res) {
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const inputEmail = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-    const rawEmail = inputEmail.includes("@") ? inputEmail : "rightmindsafrica@gmail.com";
+    const rawEmail = inputEmail;
     const rawPassword = typeof body.password === "string" ? body.password.trim() : "";
+
+    if (!rawEmail || !rawEmail.includes("@")) {
+      return res.status(400).json({ error: "Please enter your registered Administrator email address." });
+    }
 
     if (!rawPassword) {
       return res.status(400).json({ error: "Please provide the administrative password." });
@@ -120,6 +130,7 @@ export default async function handler(req, res) {
     let matchedAllowedTabs = undefined;
     let matchedCanWrite = undefined;
     let matchedFullName = undefined;
+    let emailFoundInAdminDirectory = false;
 
     // 1. Check Firestore admins collection first so custom/provisioned admin credentials work on Vercel
     const db = getServerFirestore();
@@ -127,6 +138,7 @@ export default async function handler(req, res) {
       try {
         const snap = await getDoc(doc(db, "admins", rawEmail));
         if (snap.exists()) {
+          emailFoundInAdminDirectory = true;
           const data = snap.data();
           if (data?.status === "Suspended") {
             return res.status(403).json({
@@ -154,8 +166,9 @@ export default async function handler(req, res) {
           const digestMatch =
             data?.passwordDigest &&
             (data.passwordDigest === candidateDigest || data.passwordDigest === candidateLowerDigest);
+          const hasCustomPassword = Boolean(data?.passwordHash || data?.passwordDigest);
 
-          if (scryptMatch || digestMatch) {
+          if (scryptMatch || digestMatch || (!hasCustomPassword && isMasterAdminPassword(rawPassword))) {
             matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : (data.role || "Admin");
             matchedAllowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
             matchedCanWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
@@ -166,10 +179,19 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. Fallback to master admin password if not matched via custom password
-    if (!matchedRole && isMasterAdminPassword(rawPassword)) {
-      matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : "Admin";
-      matchedCanWrite = true;
+    // 2. Fallback to master admin password ONLY for pre-seeded admin accounts (NEVER arbitrary emails)
+    if (!emailFoundInAdminDirectory && SEEDED_ADMIN_EMAILS.has(rawEmail)) {
+      emailFoundInAdminDirectory = true;
+      if (isMasterAdminPassword(rawPassword)) {
+        matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : "Admin";
+        matchedCanWrite = true;
+      }
+    }
+
+    if (!emailFoundInAdminDirectory) {
+      return res.status(403).json({
+        error: `Access Denied: The email "${rawEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+      });
     }
 
     if (!matchedRole) {

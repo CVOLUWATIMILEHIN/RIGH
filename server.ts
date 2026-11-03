@@ -215,8 +215,12 @@ app.post("/api/admin/login", async (req, res) => {
   try {
     const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
     const inputEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
-    const rawEmail = inputEmail.includes("@") ? inputEmail : "rightmindsafrica@gmail.com";
+    const rawEmail = inputEmail;
     const rawPassword = typeof req.body?.password === "string" ? req.body.password.trim() : "";
+
+    if (!rawEmail || !rawEmail.includes("@")) {
+      return res.status(400).json({ error: "Please enter your registered Administrator email address." });
+    }
 
     if (!rawPassword) {
       return res.status(400).json({ error: "Please provide the administrative password." });
@@ -226,55 +230,45 @@ app.post("/api/admin/login", async (req, res) => {
     const ipOnlyKey = `ip:${clientIp}`;
     const now = Date.now();
 
-    let matchedRole: string | null = null;
-    let matchedAllowedTabs: string[] | undefined = undefined;
-    let matchedCanWrite: boolean | undefined = undefined;
-
-    // 1. Check in-memory server store first
-    const memRecord = adminCredentialStore.get(rawEmail);
-    if (memRecord && verifyPasswordScrypt(rawPassword, memRecord.salt, memRecord.hash)) {
-      matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : memRecord.role;
-      matchedAllowedTabs = memRecord.allowedTabs;
-      matchedCanWrite = memRecord.canWrite;
-    }
-
-    // 2. Check master admin password hash (RMAAdmin2026) only if operator hasn't had a custom password set
-    if (!matchedRole && !memRecord && isMasterAdminPassword(rawPassword)) {
-      matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : "Admin";
-      matchedCanWrite = true;
-    }
-
     const existingAttempt = loginAttemptStore.get(attemptKey);
     const existingIpAttempt = loginAttemptStore.get(ipOnlyKey);
 
-    if (!matchedRole) {
-      if (existingAttempt && existingAttempt.lockoutUntil > now) {
-        const waitSeconds = Math.ceil((existingAttempt.lockoutUntil - now) / 1000);
-        return res.status(429).json({
-          error: `Access temporarily locked due to multiple failed attempts. Try again in ${waitSeconds}s.`,
-          lockoutSeconds: waitSeconds
-        });
-      }
-      if (existingIpAttempt && existingIpAttempt.lockoutUntil > now) {
-        const waitSeconds = Math.ceil((existingIpAttempt.lockoutUntil - now) / 1000);
-        return res.status(429).json({
-          error: `Access temporarily locked due to multiple failed attempts. Try again in ${waitSeconds}s.`,
-          lockoutSeconds: waitSeconds
-        });
-      }
+    if (existingAttempt && existingAttempt.lockoutUntil > now) {
+      const waitSeconds = Math.ceil((existingAttempt.lockoutUntil - now) / 1000);
+      return res.status(429).json({
+        error: `Access temporarily locked due to multiple failed attempts. Try again in ${waitSeconds}s.`,
+        lockoutSeconds: waitSeconds
+      });
+    }
+    if (existingIpAttempt && existingIpAttempt.lockoutUntil > now) {
+      const waitSeconds = Math.ceil((existingIpAttempt.lockoutUntil - now) / 1000);
+      return res.status(429).json({
+        error: `Access temporarily locked due to multiple failed attempts. Try again in ${waitSeconds}s.`,
+        lockoutSeconds: waitSeconds
+      });
     }
 
-    // 3. Check Firestore hashed admin store if not matched yet
-    if (!matchedRole) {
-      const db = getServerFirestore();
-      if (db) {
+    let matchedRole: string | null = null;
+    let matchedAllowedTabs: string[] | undefined = undefined;
+    let matchedCanWrite: boolean | undefined = undefined;
+    let matchedFullName: string | undefined = undefined;
+    let emailFoundInAdminDirectory = false;
+
+    // 1. Check Firestore `admins/{rawEmail}` first so custom passwords, permissions & suspensions take precedence
+    const db = getServerFirestore();
+    if (db) {
+      try {
         const snap = await getDoc(doc(db, "admins", rawEmail));
         if (snap.exists()) {
+          emailFoundInAdminDirectory = true;
           const data = snap.data();
           if (data?.status === "Suspended") {
             return res.status(403).json({
               error: "Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin)."
             });
+          }
+          if (data?.fullName) {
+            matchedFullName = data.fullName;
           }
           const candidateDigest = crypto
             .createHash("sha256")
@@ -292,8 +286,9 @@ app.post("/api/admin/login", async (req, res) => {
           const digestMatch =
             data?.passwordDigest &&
             (data.passwordDigest === candidateDigest || data.passwordDigest === candidateLowerDigest);
+          const hasCustomPassword = Boolean(data?.passwordHash || data?.passwordDigest);
 
-          if (scryptMatch || digestMatch) {
+          if (scryptMatch || digestMatch || (!hasCustomPassword && isMasterAdminPassword(rawPassword))) {
             matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : (data.role || "Admin");
             matchedAllowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
             matchedCanWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
@@ -303,12 +298,34 @@ app.post("/api/admin/login", async (req, res) => {
                 hash: data.passwordHash,
                 role: matchedRole,
                 allowedTabs: matchedAllowedTabs,
-                canWrite: matchedCanWrite
+                canWrite: matchedCanWrite,
+                fullName: matchedFullName
               });
             }
           }
         }
+      } catch (e) {
+        console.warn("[Admin Auth] Firestore check warning:", e);
       }
+    }
+
+    // 2. Check in-memory server store ONLY for pre-registered/seeded admin accounts (NEVER arbitrary emails)
+    const memRecord = adminCredentialStore.get(rawEmail);
+    if (memRecord) {
+      emailFoundInAdminDirectory = true;
+      if (!matchedRole && verifyPasswordScrypt(rawPassword, memRecord.salt, memRecord.hash)) {
+        matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : memRecord.role;
+        matchedAllowedTabs = memRecord.allowedTabs;
+        matchedCanWrite = memRecord.canWrite;
+        matchedFullName = memRecord.fullName || matchedFullName;
+      }
+    }
+
+    // Reject immediately if email is not a registered Admin
+    if (!emailFoundInAdminDirectory && !ANCHOR_SUPER_ADMINS.has(rawEmail)) {
+      return res.status(403).json({
+        error: `Access Denied: The email "${rawEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+      });
     }
 
     if (!matchedRole) {

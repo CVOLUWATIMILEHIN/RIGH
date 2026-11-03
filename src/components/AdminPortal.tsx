@@ -67,7 +67,8 @@ import {
   AdminOperatorRecord,
   ANCHOR_SUPER_ADMIN_EMAILS,
   getPortalApplications,
-  getAdminWelcomeName
+  getAdminWelcomeName,
+  isAuthorizedAdminEmail
 } from "../lib/db";
 
 import AdminTerminal from "./AdminTerminal";
@@ -326,10 +327,27 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
     return null;
   });
 
-  // Verify stored session token cryptographically with the backend server on mount
+  // Verify stored session token cryptographically with the backend server and admin directory on mount
   useEffect(() => {
-    if (!currentAdminUser?.token) return;
+    if (!currentAdminUser?.token || !currentAdminUser?.username) return;
     let cancelled = false;
+
+    // Immediately verify that the stored session email is actually an authorized Admin
+    isAuthorizedAdminEmail(currentAdminUser.username)
+      .then((check) => {
+        if (cancelled) return;
+        if (!check.authorized) {
+          setCurrentAdminUser(null);
+          localStorage.removeItem("rma_current_logged_in_user");
+          window.dispatchEvent(new Event("rma_admin_session_changed"));
+          setLoginError(
+            check.reason ||
+              "Access Denied: Your email is not registered as an Administrator."
+          );
+        }
+      })
+      .catch(() => null);
+
     fetch("/api/admin/verify", {
       method: "POST",
       headers: {
@@ -370,7 +388,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
     return () => {
       cancelled = true;
     };
-  }, [currentAdminUser?.token]);
+  }, [currentAdminUser?.token, currentAdminUser?.username]);
 
   const [isFirebaseAuthActive, setIsFirebaseAuthActive] = useState(false);
 
@@ -590,10 +608,11 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const rawUser = usernameInput.trim().toLowerCase();
-    const cleanEmail = rawUser
-      ? (rawUser.includes("@") ? rawUser : "rightmindsafrica@gmail.com")
-      : "rightmindsafrica@gmail.com";
+    const cleanEmail = usernameInput.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setLoginError("Please enter your registered Administrator email address.");
+      return;
+    }
     const cleanPass = passwordInput.trim();
     if (!cleanPass) {
       setLoginError("Please enter the administrative password.");
@@ -611,6 +630,23 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
     }, 8000);
 
     try {
+      // 0. STRICT ADMIN DIRECTORY GATE: Only Super Admin or Admins explicitly created in the directory can log in
+      const authCheck = await isAuthorizedAdminEmail(cleanEmail);
+      if (!authCheck.authorized) {
+        throw new Error(
+          authCheck.reason ||
+            `Access Denied: The email "${cleanEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+        );
+      }
+
+      // If this admin was created with a custom password, strictly require their assigned password
+      if (!isSuperAdminEmail && authCheck.operator?.passwordDigest) {
+        const opMatch = await authenticateOperatorAccount(cleanEmail, cleanPass);
+        if (!opMatch) {
+          throw new Error("Invalid administrative credentials. Please enter the password assigned to your administrator account.");
+        }
+      }
+
       // 1. PRIMARY SERVER-SIDE CRYPTOGRAPHIC AUTHENTICATION (scrypt + HMAC-SHA256 token)
       let serverSession: {
         email: string;
@@ -679,13 +715,11 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             let finalWrite = resolvedWrite;
             let finalFullName = serverData?.fullName || serverData?.user?.fullName;
             if (!isSuperAdminEmail) {
-              const ops = await getAdminOperators().catch(() => []);
-              const matchedOp = ops.find((o) => o.email.toLowerCase() === cleanEmail);
+              const matchedOp = authCheck.operator;
               if (matchedOp) {
                 if (matchedOp.status === "Suspended") {
                   throw new Error("Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin).");
                 }
-                // If a custom password was set on this operator, require the custom password instead of default master password
                 if (matchedOp.passwordDigest) {
                   const opMatch = await authenticateOperatorAccount(cleanEmail, cleanPass);
                   if (!opMatch) {
@@ -751,8 +785,24 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         }
       }
 
-      if (!serverSession && isSuperAdminEmail && (await verifySaltedAdminDigest(cleanPass))) {
-        serverSession = await createClientSignedSession(cleanEmail, "Super Admin");
+      // Allow master password fallback ONLY if the authorized admin has no custom password set
+      if (!serverSession && !authCheck.operator?.passwordDigest && (await verifySaltedAdminDigest(cleanPass))) {
+        const fallbackRole = isSuperAdminEmail ? "Super Admin" : (authCheck.operator?.role || "Admin");
+        const clientSigned = await createClientSignedSession(
+          cleanEmail,
+          fallbackRole,
+          authCheck.operator?.allowedTabs,
+          authCheck.operator?.canWrite
+        );
+        serverSession = {
+          email: cleanEmail,
+          fullName: authCheck.operator?.fullName,
+          role: fallbackRole,
+          allowedTabs: (authCheck.operator?.allowedTabs as AdminTabType[]) || undefined,
+          canWrite: authCheck.operator?.canWrite !== false,
+          token: clientSigned.token,
+          expiresAt: clientSigned.expiresAt
+        };
         serverLockoutSeconds = 0;
         serverErrorMsg = "";
       }
@@ -766,9 +816,9 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         throw new Error(serverErrorMsg || "Authentication failed too many times. Access temporarily locked for security.");
       }
 
-      // 2. ATTEMPT SUPABASE AUTH IF SERVER SESSION DID NOT MATCH
+      // 2. ATTEMPT SUPABASE AUTH IF SERVER SESSION DID NOT MATCH (Only for pre-verified authorized admin emails)
       let supabaseUser: any = null;
-      if (!serverSession && supabase && isSupabaseConfigured) {
+      if (!serverSession && !authCheck.operator?.passwordDigest && supabase && isSupabaseConfigured) {
         addTerminalLog(`🔐 [SUPABASE AUTH] Authenticating ${cleanEmail} against Supabase GoTrue...`);
         try {
           const { data: supaAuthData, error: supaAuthError } = await supabase.auth.signInWithPassword({
@@ -796,26 +846,12 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
             const auth: any = await Promise.race([getAuthPromise, timeoutPromise]);
             if (auth) {
-              const { signInWithEmailAndPassword, createUserWithEmailAndPassword } = await import("firebase/auth");
-              try {
-                await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
-              } catch (err: any) {
-                const isOperationNotAllowed =
-                  err?.code === "auth/operation-not-allowed" ||
-                  err?.message?.includes("operation-not-allowed");
-                if (!isOperationNotAllowed && (
-                  err?.code === "auth/user-not-found" ||
-                  err?.message?.includes("user-not-found") ||
-                  err?.code === "auth/invalid-credential" ||
-                  err?.message?.includes("invalid-credential")
-                )) {
-                  await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass).catch(() => null);
-                }
-              }
+              const { signInWithEmailAndPassword } = await import("firebase/auth");
+              await signInWithEmailAndPassword(auth, cleanEmail, cleanPass).catch(() => null);
             }
           } catch {}
         })();
-      } else {
+      } else if (!authCheck.operator?.passwordDigest) {
         let auth: any = null;
         try {
           const getAuthPromise = getFirebaseAuth();
@@ -839,56 +875,22 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         } else if (!supabaseUser) {
           throw new Error(serverErrorMsg || "Invalid administrative email or password.");
         }
+      } else {
+        throw new Error(serverErrorMsg || "Invalid administrative email or password.");
       }
 
       // Determine final active user role & scoped permissions
-      let resolvedRole: "Super Admin" | "Admin" | "Viewer (Read Only)" | "Public User" | "Editor" | "Viewer" = "Public User";
-      let resolvedAllowedTabs: AdminTabType[] | undefined = serverSession?.allowedTabs;
-      let resolvedCanWrite: boolean = serverSession?.canWrite ?? true;
-      let resolvedFullName: string | undefined = serverSession?.fullName;
+      let resolvedRole: "Super Admin" | "Admin" | "Viewer (Read Only)" | "Public User" | "Editor" | "Viewer" =
+        isSuperAdminEmail ? "Super Admin" : (authCheck.operator?.role || "Public User");
+      let resolvedAllowedTabs: AdminTabType[] | undefined =
+        serverSession?.allowedTabs || (authCheck.operator?.allowedTabs as AdminTabType[]);
+      let resolvedCanWrite: boolean =
+        serverSession?.canWrite ?? (authCheck.operator?.canWrite !== false);
+      let resolvedFullName: string | undefined =
+        serverSession?.fullName || authCheck.operator?.fullName;
 
       if (serverSession) {
         resolvedRole = serverSession.role;
-      } else if (supabaseUser) {
-        const metaRole = supabaseUser.user_metadata?.role;
-        resolvedRole = (metaRole === "Super Admin" || isSuperAdminEmail) ? "Super Admin" : "Admin";
-        addTerminalLog(`🛡️ [SUPABASE AUTH] Granted [${resolvedRole}] privileges to ${cleanEmail}`);
-      } else if (userCredential) {
-        try {
-          const fetchRolePromise = async () => {
-            const { doc, getDoc } = await import("firebase/firestore");
-            const db = await getFirestoreDb();
-            const docRef = doc(db, "admins", cleanEmail);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-              const data = docSnap.data();
-              return {
-                role: (data.role || "Viewer (Read Only)") as any,
-                allowedTabs: Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined,
-                canWrite: typeof data.canWrite === "boolean" ? data.canWrite : true,
-                fullName: data.fullName,
-                status: data.status
-              };
-            }
-            return {
-              role: isSuperAdminEmail ? "Super Admin" : ("Public User" as any)
-            };
-          };
-          const fetchTimeout = new Promise<any>((resolve) =>
-            setTimeout(() => resolve({ role: isSuperAdminEmail ? "Super Admin" : "Public User" }), 2500)
-          );
-          const roleData = await Promise.race([fetchRolePromise(), fetchTimeout]);
-          if (roleData?.status === "Suspended") {
-            throw new Error("This administrator account has been suspended by the Super Admin.");
-          }
-          resolvedRole = roleData?.role || "Public User";
-          resolvedAllowedTabs = roleData?.allowedTabs;
-          resolvedCanWrite = typeof roleData?.canWrite === "boolean" ? roleData.canWrite : true;
-          resolvedFullName = roleData?.fullName;
-        } catch (dbErr: any) {
-          if (dbErr?.message?.includes("suspended")) throw dbErr;
-          resolvedRole = isSuperAdminEmail ? "Super Admin" : "Public User";
-        }
       }
 
       if (resolvedRole === "Public User") {
@@ -1174,12 +1176,20 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         }
       })();
 
+      const authCheck = await isAuthorizedAdminEmail(cleanEmail);
+      if (!authCheck.authorized) {
+        await auth.signOut().catch(() => null);
+        throw new Error(
+          authCheck.reason ||
+            `Access Denied: The email "${cleanEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+        );
+      }
+
       if (resolvedRole === "Public User") {
-        showFeedback("Welcome! Authenticated successfully. Redirecting you to the Public Website.", "success");
-        addTerminalLog(`🛡️ [SECURITY] Public User authenticated via Google: ${cleanEmail}. Redirecting to Public Website.`);
-        setIsAuthLoading(false);
-        onBack();
-        return;
+        await auth.signOut().catch(() => null);
+        throw new Error(
+          `Access Denied: The email "${cleanEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+        );
       }
 
       let googleSession: {
@@ -2532,14 +2542,14 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             
             <div className="space-y-1">
               <label className="block text-[9.5px] font-black uppercase text-slate-400 tracking-widest font-mono">
-                Admin Username / Email:
+                Registered Admin Email:
               </label>
               <input
-                type={isForgotPasswordMode ? "email" : "text"}
-                required={isForgotPasswordMode}
+                type="email"
+                required
                 value={usernameInput}
                 onChange={(e) => setUsernameInput(e.target.value)}
-                placeholder="Enter admin email (or leave blank for master admin)"
+                placeholder="Enter your authorized administrator email"
                 className="w-full px-4 py-3 border border-slate-200 focus:border-[#0E3A2F] rounded-xl text-xs outline-none bg-slate-50/50 hover:bg-slate-50 text-slate-800 transition-all font-semibold shadow-xs"
               />
             </div>

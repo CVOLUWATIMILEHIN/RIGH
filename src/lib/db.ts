@@ -1868,6 +1868,97 @@ export async function authenticateOperatorAccount(
   return null;
 }
 
+export async function isAuthorizedAdminEmail(email: string): Promise<{
+  authorized: boolean;
+  isSuperAdmin: boolean;
+  operator?: AdminOperatorRecord;
+  reason?: string;
+}> {
+  const cleanEmail = (email || "").trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@")) {
+    return {
+      authorized: false,
+      isSuperAdmin: false,
+      reason: "Please enter a valid Administrator email address."
+    };
+  }
+
+  if (ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail)) {
+    return {
+      authorized: true,
+      isSuperAdmin: true
+    };
+  }
+
+  const deletedEmails = new Set(getDeletedAdminOperatorEmailsLocal());
+  if (deletedEmails.has(cleanEmail)) {
+    return {
+      authorized: false,
+      isSuperAdmin: false,
+      reason: "Access Denied: This administrator account has been removed by the Super Admin."
+    };
+  }
+
+  const operators = await getAdminOperators();
+  const matchedOp = operators.find((op) => op.email.toLowerCase() === cleanEmail);
+  if (matchedOp) {
+    if (matchedOp.status === "Suspended") {
+      return {
+        authorized: false,
+        isSuperAdmin: false,
+        operator: matchedOp,
+        reason: "Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin)."
+      };
+    }
+    return {
+      authorized: true,
+      isSuperAdmin: false,
+      operator: matchedOp
+    };
+  }
+
+  const users = await getPlatformUsers();
+  const matchedUser = users.find(
+    (u) =>
+      u.email.toLowerCase() === cleanEmail &&
+      (u.role === "Admin" || u.role === "Editor" || u.role === "Viewer")
+  );
+  if (matchedUser) {
+    if (matchedUser.status === "Suspended" || matchedUser.status === "Deactivated") {
+      return {
+        authorized: false,
+        isSuperAdmin: false,
+        reason: "Access Revoked: Your account has been suspended or deactivated by the System Owner (Super Admin)."
+      };
+    }
+    return {
+      authorized: true,
+      isSuperAdmin: false,
+      operator: {
+        email: matchedUser.email.toLowerCase(),
+        fullName: matchedUser.fullName,
+        role:
+          matchedUser.role === "Admin"
+            ? "Admin"
+            : matchedUser.role === "Viewer"
+            ? "Viewer (Read Only)"
+            : "Editor",
+        allowedTabs: matchedUser.allowedTabs,
+        canWrite: matchedUser.canWrite ?? (matchedUser.role === "Admin"),
+        status: "Active",
+        passwordDigest: matchedUser.passwordDigest,
+        createdAt: matchedUser.joinedAt || new Date().toISOString()
+      }
+    };
+  }
+
+  return {
+    authorized: false,
+    isSuperAdmin: false,
+    reason: `Access Denied: The email "${cleanEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+  };
+}
+
 // Authenticate administrator session strictly via server-side or WebCrypto SHA-256 verification
 export async function authenticateFallbackAdmin(email: string, passwordInput: string): Promise<"Super Admin" | "Admin" | "Editor" | "Viewer" | null> {
   const cleanEmail = email.trim().toLowerCase();
@@ -1879,6 +1970,11 @@ export async function authenticateFallbackAdmin(email: string, passwordInput: st
     try {
       localStorage.removeItem("rma_local_admin_credentials");
     } catch {}
+  }
+
+  const authCheck = await isAuthorizedAdminEmail(cleanEmail);
+  if (!authCheck.authorized) {
+    return null;
   }
 
   try {
@@ -1907,7 +2003,8 @@ export async function authenticateFallbackAdmin(email: string, passwordInput: st
     console.warn("Server admin authentication check failed:", err);
   }
 
-  if (await verifySaltedAdminDigest(passwordInput)) {
+  // Only allow master password fallback if the operator is authorized AND does not have a custom password set
+  if (!authCheck.operator?.passwordDigest && (await verifySaltedAdminDigest(passwordInput))) {
     return ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail) ? "Super Admin" : "Admin";
   }
 
