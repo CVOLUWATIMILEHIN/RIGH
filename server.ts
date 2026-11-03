@@ -1417,6 +1417,9 @@ app.post("/api/email/trigger", async (req, res) => {
       } else if (rawProg.includes("mentor") || rawProg === "mentorship") {
         progType = "mentorship";
         pName = "Mentorship Applications";
+      } else if (rawProg.includes("g3") || rawProg === "g3") {
+        progType = "g3";
+        pName = payload.programName || "G3 Series 2026/2027 — The Relevance Question";
       } else if (rawProg.includes("volunteer") || rawProg.includes("intern") || rawProg === "volunteer" || rawProg === "internship") {
         progType = "volunteer";
         pName = payload.programName || "Internship & Volunteer Applications";
@@ -1431,6 +1434,7 @@ app.post("/api/email/trigger", async (req, res) => {
       // Default Template dictionaries
       const defaultSubjects: Record<string, string> = {
         cii: "Welcome to Corper Impact Initiative",
+        g3: "Registration Confirmed – G3 Series 2026/2027 (The Relevance Question)",
         teens: "Welcome to Right-Minded Teens",
         young_leaders: "Welcome to Young Leaders Program",
         yap: "YAP Conference Delegate Pass Confirmed",
@@ -1442,6 +1446,7 @@ app.post("/api/email/trigger", async (req, res) => {
       };
 
       const defaultBodies: Record<string, string> = {
+        g3: "Dear {{fullName}},\n\nThank you for registering for G3 Series 2026/2027: The Relevance Question (The Human Advantage: Who Will You Become in a Changing World? — G3: God. Growth. Goals.) organised by Right-Minds Africa Hub.\n\nYour Registration Details:\n* Participant Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Track / Category: {{department}}\n* Series Theme: G3 Series 2026/2027 — The Relevance Question\n* Schedule: Every Saturday in December 2026 & Saturday, January 2, 2027\n* Official G3 WhatsApp Community Link: {{whatsappLink}}\n\nJoin Official G3 WhatsApp Community: {{whatsappLink}}\n\nPlease click the WhatsApp link above to join our official G3 participant group immediately for weekly session links, prep reading, speaker schedules, and community discussions.\n\nWarm regards,\nRight-Minds Africa Hub & G3 Series Committee",
         cii: "Dear {{fullName}},\n\nThank you for registering for the famous Corper Impact Initiative (CII) – Batch A 2026. This is the starting point of your service-year transformation.\n\nYour registration details are securely persisted as follows:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Assigned Program: {{programName}}\n* National Batch: {{batch}}\n* NYSC State Code: {{stateCode}}\n* Registration Date: {{submissionDate}}\n\n🚀 NEXT CRITICAL STEPS & CHANNELS:\nTo hit the ground running, network with fellow participants, and receive instant updates, please join:\n* WhatsApp Waitlist: https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI\n* Telegram Cohort Gateway: https://t.me/+_iA-Xr3CqEoyYzhk\n\nJoin WhatsApp Community: https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI\n\nIf you would like to upgrade your enrollment to high-touch Growth or Impact VIP packages (with direct workspace placement assistance and personalized mentoring), please access your dashboard.\n\nOur administrators will review your credentials shortly. You do not need to refresh this page or take any further actions.\n\nRegards,\nCII Admins & Right Minds Africa Board",
         teens: "Dear {{fullName}},\n\nWe are absolutely thrilled to welcome you to the Right-Minded Teens growth curriculum.\n\nYour registration details:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Selected Track: {{programName}}\n* Parent/Guardian Name: {{parentName}}\n* Parent Contacts: {{parentPhone}}\n* Level / Class Area: {{class}}\n* Submission Date: {{submissionDate}}\n\nWhat to Expect:\nRight-Minded Teens empowers young secondary school students with high moral character, emotional intelligence, career pathways, and academic excellence.\n\nOur Teens Department coordinators will reach out to you and your parent/guardian within 48 hours for the onboarding interview and virtual class links.\n\n🚀 STAY UPDATED:\n* Join Teen Hub: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nTeens Department coordinators",
         young_leaders: "Dear {{fullName}},\n\nCongratulations! Your application for the Young Leaders Program (YLP) Cohort has been successfully received.\n\nYour details:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Program: {{programName}}\n* University/Institution: {{institution}}\n* Year/Academic Level: {{level}}\n* Submission Date: {{submissionDate}}\n\nSyllabus Overview & Core Themes:\n* Duration: 6 Months intensive leadership track\n* Objectives: Self-governance, systemic problem solving, ethics, and project coordination.\n* Learning Portal & Syllabus Link: https://rightmindsafrica.org/\n\nNext Steps:\nOur Youth Curators Board will audit your leadership philosophy statements. Top nominees will be invited for video evaluation prompts.\n\n🚀 CHANNELS:\n* WhatsApp Room: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nYouth Curators Board",
@@ -1462,7 +1467,9 @@ app.post("/api/email/trigger", async (req, res) => {
 
       const resolvedWhatsappLink =
         payload.whatsappLink ||
-        (progType === "cii"
+        (progType === "g3"
+          ? "https://chat.whatsapp.com/J4QmEIJbtPiCXLGm5ELHc5"
+          : progType === "cii"
           ? "https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI"
           : progType === "volunteer"
           ? "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2"

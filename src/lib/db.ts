@@ -26,6 +26,9 @@ export interface Registration {
   aspiration?: string;
   batch?: string;
   primaryGoal?: string;
+  primaryRole?: string;
+  contactMethod?: string;
+  whatsappLink?: string;
   stateCode?: string;
   parentName?: string;
   parentPhone?: string;
@@ -883,7 +886,9 @@ export async function saveRegistration(reg: Omit<Registration, "id" | "registere
         const regId = newReg.registrationId || newReg.id;
         const whatsappUrl =
           (newReg as any).whatsappLink ||
-          (programType === "volunteer"
+          (programType === "g3"
+            ? "https://chat.whatsapp.com/J4QmEIJbtPiCXLGm5ELHc5"
+            : programType === "volunteer"
             ? "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2"
             : programType === "cii"
               ? "https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI"
@@ -1618,9 +1623,10 @@ export async function verifySaltedAdminDigest(passwordInput: string): Promise<bo
 export async function createClientSignedSession(
   email: string,
   role: "Super Admin" | "Admin" | "Editor" | "Viewer" | "Viewer (Read Only)",
-  allowedTabs?: string[],
-  canWrite?: boolean
-): Promise<{ email: string; role: any; allowedTabs?: string[]; canWrite?: boolean; token: string; expiresAt: number }> {
+  allowedTabs?: any[],
+  canWrite?: boolean,
+  fullName?: string
+): Promise<{ email: string; fullName?: string; role: any; allowedTabs?: any[]; canWrite?: boolean; token: string; expiresAt: number }> {
   const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
   const payloadObj = { email, role, allowedTabs, canWrite, expiresAt };
   const payloadB64 = typeof window !== "undefined"

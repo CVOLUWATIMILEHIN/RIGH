@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef } from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { PageContainer } from "./PageContainer";
 import {
   ArrowLeft,
@@ -39,7 +39,7 @@ const G3_GOOGLE_FORM_DIRECT_URL = "https://forms.gle/7h9muLz6rLnB2spV7";
 const G3_GOOGLE_FORM_EMBED_URL =
   "https://docs.google.com/forms/d/e/1FAIpQLSdE1ggFc9mNCRqHb9odQnIdJLaLNs_ZoomB66JOBWFH5yOSSg/viewform?embedded=true";
 const G3_WHATSAPP_GROUP_URL =
-  "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
+  "https://chat.whatsapp.com/J4QmEIJbtPiCXLGm5ELHc5";
 
 const G3_ROLE_OPTIONS = [
   "Graphic Designer",
@@ -71,6 +71,7 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
   const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
   const iframeLoadCount = useRef(0);
   const [googleFormSubmitted, setGoogleFormSubmitted] = useState<boolean>(false);
+  const [showPostSubmitModal, setShowPostSubmitModal] = useState<boolean>(false);
   const [copiedWhatsapp, setCopiedWhatsapp] = useState<boolean>(false);
 
   // Quick Confirmation Email & WhatsApp Dispatch state
@@ -827,112 +828,22 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
             <div className="w-full border border-slate-200 rounded-3xl bg-white overflow-hidden shadow-sm">
               <div className="h-1.5 w-full bg-gradient-to-r from-[#0E3A2F] via-emerald-700 to-amber-500" />
 
-              {/* Top Quick Confirmation Email & WhatsApp Bar right ABOVE the Google Form */}
-              <div className="p-4 sm:p-6 bg-gradient-to-r from-[#0E3A2F] via-[#12493b] to-[#0b2e25] text-white border-b border-amber-400/40 space-y-3 text-left">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-amber-400/20 text-amber-300 border border-amber-400/40 px-2.5 py-0.5 rounded-full font-mono">
-                      <Mail size={11} /> Instant Email Confirmation &amp; WhatsApp Onboarding
-                    </span>
-                    <p className="text-xs sm:text-sm text-emerald-100 font-medium">
-                      Enter your Name &amp; Email here (before or right after submitting the Google Form below) to immediately receive your <strong>Confirmation Email</strong> and join our <strong>Official WhatsApp Community</strong>:
-                    </p>
-                  </div>
-                  <a
-                    href={G3_WHATSAPP_GROUP_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-1.5 shadow-sm shrink-0 self-start lg:self-auto"
-                  >
-                    <MessageCircle size={14} className="fill-slate-950" />
-                    <span>Join Official WhatsApp Group</span>
-                    <ExternalLink size={12} />
-                  </a>
+              {/* Clean Top Navigation Bar for G3 Registration Form */}
+              <div className="px-4 sm:px-6 py-3.5 bg-slate-50 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-slate-800 font-bold">
+                  <span className="w-2 h-2 rounded-full bg-brand-orange animate-pulse" />
+                  <span>Right-Minds Africa Hub — G3 Series 2026/2027 Registration Form</span>
                 </div>
-
-                <form onSubmit={handleGoogleFormQuickConfirm} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 pt-1">
-                  <input
-                    type="text"
-                    required
-                    value={gfName}
-                    onChange={(e) => setGfName(e.target.value)}
-                    placeholder="Your Full Name *"
-                    className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  />
-                  <input
-                    type="email"
-                    required
-                    value={gfEmail}
-                    onChange={(e) => setGfEmail(e.target.value)}
-                    placeholder="Your Email Address *"
-                    className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  />
-                  <input
-                    type="tel"
-                    value={gfPhone}
-                    onChange={(e) => setGfPhone(e.target.value)}
-                    placeholder="Phone / WhatsApp Number"
-                    className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  />
-                  <select
-                    value={gfRole}
-                    onChange={(e) => setGfRole(e.target.value)}
-                    className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  >
-                    {G3_ROLE_OPTIONS.map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="submit"
-                    disabled={gfSending}
-                    className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-sm inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all disabled:opacity-60"
-                  >
-                    {gfSending ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
-                    <span>{gfSending ? "Sending..." : "Send My Confirmation Mail"}</span>
-                  </button>
-                </form>
+                <a
+                  href={G3_GOOGLE_FORM_DIRECT_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 text-brand-orange hover:text-brand-blue font-bold text-[11px] inline-flex items-center gap-1 transition-colors"
+                >
+                  <span>Open Form in New Tab</span>
+                  <ExternalLink size={11} />
+                </a>
               </div>
-
-              {googleFormSubmitted && (
-                <div className="mx-4 sm:mx-8 mt-6 p-5 bg-emerald-50 border-2 border-emerald-400 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md">
-                  <div className="flex items-start gap-3 text-left">
-                    <CheckCircle2 size={24} className="text-emerald-600 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 font-mono block">
-                        Form Response Detected
-                      </span>
-                      <h4 className="text-base sm:text-lg font-extrabold text-slate-900">
-                        Google Form Submitted! Join WhatsApp &amp; Receive Your Confirmation Mail
-                      </h4>
-                      <p className="text-xs text-slate-600 mt-0.5">
-                        Click the green button to join our official WhatsApp community immediately, and enter your email below to receive your official confirmation email.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-                    <a
-                      href={G3_WHATSAPP_GROUP_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-5 py-3 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-2 shadow-sm"
-                    >
-                      <MessageCircle size={16} />
-                      <span>Join WhatsApp Group</span>
-                      <ExternalLink size={13} />
-                    </a>
-                    <a
-                      href="#g3-post-submission-whatsapp-email"
-                      className="px-4 py-3 bg-[#0E3A2F] hover:bg-[#0c3127] text-white font-extrabold text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-1.5"
-                    >
-                      <Mail size={14} />
-                      <span>Get Confirmation Email</span>
-                    </a>
-                  </div>
-                </div>
-              )}
 
               <div className="relative w-full bg-white min-h-[950px] sm:min-h-[1200px]">
                 {isIframeLoading && (
@@ -956,10 +867,7 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
                     iframeLoadCount.current += 1;
                     if (iframeLoadCount.current >= 2) {
                       setGoogleFormSubmitted(true);
-                      const confirmSection = document.getElementById("g3-post-submission-whatsapp-email");
-                      if (confirmSection) {
-                        confirmSection.scrollIntoView({ behavior: "smooth", block: "center" });
-                      }
+                      setShowPostSubmitModal(true);
                     }
                   }}
                 >
@@ -967,220 +875,222 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
                 </iframe>
               </div>
 
-              <div className="border-t border-slate-200 bg-slate-50/60 px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
-                <span className="text-xs text-slate-500">
-                  If the form does not display properly on your browser, you can open it directly:
-                </span>
-                <a
-                  href={G3_GOOGLE_FORM_DIRECT_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-orange hover:text-brand-blue transition-colors"
-                >
-                  <span>Open Registration Form in a New Tab</span>
-                  <ExternalLink size={13} />
-                </a>
-              </div>
-
-              {/* FINAL STEP AFTER SUBMITTING THE FORM: GET YOUR CONFIRMATION EMAIL & JOIN OUR OFFICIAL WHATSAPP COMMUNITY */}
-              <div
-                id="g3-post-submission-whatsapp-email"
-                className="p-6 sm:p-10 bg-gradient-to-br from-[#0E3A2F] via-[#12493b] to-[#0b2e25] text-white border-t-4 border-amber-400 space-y-8 scroll-mt-24 text-left"
-              >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-white/10 pb-6">
-                  <div className="space-y-2 max-w-2xl">
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-[#25D366]/20 text-emerald-300 border border-[#25D366]/40 px-3 py-1 rounded-full font-mono">
-                      <CheckCircle2 size={12} /> Final Step After Submitting the Form
-                    </span>
-                    <h3 className="text-2xl sm:text-3xl font-extrabold uppercase font-display tracking-tight text-white">
-                      Get Your Confirmation Email &amp; Join Our Official WhatsApp Community
-                    </h3>
-                    <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-                      Once you click <strong>Submit</strong> on the form above, enter your name and email below to immediately receive your <strong>Official Application Confirmation Mail</strong> and join our <strong>Internship &amp; Volunteer WhatsApp Community</strong>.
-                    </p>
-                  </div>
-
-                  {/* Direct WhatsApp Join CTA */}
-                  <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0 bg-white/5 border border-white/10 p-4 rounded-2xl">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold">
-                      Instant WhatsApp Onboarding Link:
-                    </span>
-                    <a
-                      href={G3_WHATSAPP_GROUP_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-6 py-3.5 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer transition-all"
-                    >
-                      <MessageCircle size={18} className="fill-slate-950" />
-                      <span>Join Official WhatsApp Group</span>
-                      <ExternalLink size={14} />
-                    </a>
-                    <button
-                      type="button"
-                      onClick={handleCopyWhatsappLink}
-                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                    >
-                      {copiedWhatsapp ? (
-                        <>
-                          <Check size={13} className="text-emerald-300" />
-                          <span>WhatsApp Link Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={13} />
-                          <span>Copy WhatsApp Link</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+              {/* Bottom Helper Bar (triggers popup on click if browser didn't reload iframe) */}
+              <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-slate-800">
+                    Already clicked Submit on the Google Form?
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Your confirmation popup will trigger automatically upon submission. If it didn't open, click the button to get your email and WhatsApp link.
+                  </p>
                 </div>
-
-                {/* Quick Confirmation Email Form */}
-                {gfSuccess ? (
-                  <div className="bg-emerald-950/70 border border-emerald-400/40 rounded-2xl p-6 space-y-4">
-                    <div className="flex items-start gap-3">
-                      <CheckCircle2 size={24} className="text-[#25D366] shrink-0 mt-0.5" />
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-300 font-bold">
-                          Confirmation Email Dispatched • REF: {gfSuccess.id}
-                        </span>
-                        <h4 className="text-lg font-extrabold text-white">
-                          Thank You, {gfSuccess.fullName}! Your Confirmation Mail Has Been Sent.
-                        </h4>
-                        <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-                          We have sent your official confirmation email along with the WhatsApp invitation link to <strong>{gfSuccess.email}</strong>. Click below to open the official WhatsApp group directly:
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 pt-1">
-                      <a
-                        href={G3_WHATSAPP_GROUP_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-6 py-3 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-2 shadow-md"
-                      >
-                        <MessageCircle size={16} className="fill-slate-950" />
-                        <span>Open Official WhatsApp Group Now</span>
-                        <ExternalLink size={14} />
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => setGfSuccess(null)}
-                        className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl cursor-pointer"
-                      >
-                        Send to Another Email
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <form onSubmit={handleGoogleFormQuickConfirm} className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-2xl p-5 sm:p-6 space-y-4">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <h4 className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-2">
-                        <Mail size={16} />
-                        <span>Send My Official Confirmation Email &amp; WhatsApp Invitation</span>
-                      </h4>
-                      <span className="text-[11px] text-emerald-200 font-mono">
-                        Instant Automated Dispatch
-                      </span>
-                    </div>
-
-                    {gfError && (
-                      <div className="p-3 bg-rose-500/20 border border-rose-400/40 rounded-xl text-xs text-rose-100 flex items-center gap-2">
-                        <AlertCircle size={15} className="shrink-0 text-rose-300" />
-                        <span>{gfError}</span>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
-                          Full Name *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={gfName}
-                          onChange={(e) => setGfName(e.target.value)}
-                          placeholder="Enter your full name"
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
-                          Email Address *
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={gfEmail}
-                          onChange={(e) => setGfEmail(e.target.value)}
-                          placeholder="you@example.com"
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
-                          Phone / WhatsApp Number
-                        </label>
-                        <input
-                          type="tel"
-                          value={gfPhone}
-                          onChange={(e) => setGfPhone(e.target.value)}
-                          placeholder="+234 800 000 0000"
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
-                          Primary Role Selected
-                        </label>
-                        <select
-                          value={gfRole}
-                          onChange={(e) => setGfRole(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        >
-                          {G3_ROLE_OPTIONS.map((role) => (
-                            <option key={role} value={role}>
-                              {role}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 flex flex-wrap items-center justify-between gap-4">
-                      <p className="text-[11px] text-emerald-100/80">
-                        We will immediately send your confirmation mail with the WhatsApp group link (<a href={G3_WHATSAPP_GROUP_URL} target="_blank" rel="noopener noreferrer" className="underline text-amber-300">{G3_WHATSAPP_GROUP_URL}</a>) to your email address.
-                      </p>
-                      <button
-                        type="submit"
-                        disabled={gfSending}
-                        className="px-6 py-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md inline-flex items-center gap-2 cursor-pointer transition-all disabled:opacity-60"
-                      >
-                        {gfSending ? (
-                          <>
-                            <Loader2 size={15} className="animate-spin" />
-                            <span>Sending Confirmation Mail...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Mail size={15} />
-                            <span>Send Confirmation Email &amp; Open WhatsApp Link</span>
-                            <ArrowRight size={14} />
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                )}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <a
+                    href={G3_GOOGLE_FORM_DIRECT_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors px-2 py-1"
+                  >
+                    <span>Open in New Tab</span>
+                    <ExternalLink size={12} />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setShowPostSubmitModal(true)}
+                    className="px-5 py-2.5 bg-brand-orange hover:bg-orange-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-sm transition-all shrink-0"
+                  >
+                    <CheckCircle2 size={15} className="text-white" />
+                    <span>Get Confirmation Email &amp; WhatsApp Access &rarr;</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </PageContainer>
       </section>
+
+      {/* =========================================================================
+          AUTO-POPUP POST-SUBMISSION CONFIRMATION EMAIL & WHATSAPP MODAL
+          ========================================================================= */}
+      <AnimatePresence>
+        {showPostSubmitModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              className="bg-gradient-to-br from-[#0E3A2F] via-[#12493b] to-[#0b2e25] text-white border-2 border-amber-400 rounded-3xl p-6 sm:p-8 max-w-xl w-full text-left shadow-2xl space-y-6 relative max-h-[92vh] overflow-y-auto"
+            >
+              <button
+                type="button"
+                onClick={() => setShowPostSubmitModal(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold cursor-pointer transition-colors"
+              >
+                ✕
+              </button>
+
+              <div className="space-y-2 pr-6">
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-[#25D366]/20 text-emerald-300 border border-[#25D366]/40 px-3 py-1 rounded-full font-mono">
+                  <CheckCircle2 size={12} /> G3 Registration Form Received!
+                </span>
+                <h3 className="text-xl sm:text-2xl font-extrabold uppercase font-display tracking-tight text-white">
+                  Instant Email Confirmation &amp; WhatsApp Onboarding
+                </h3>
+                <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
+                  Enter your name and email below so our automated system immediately sends your <strong>Official G3 Series 2026/2027 Confirmation Mail</strong> and invites you to our <strong>Official WhatsApp Community</strong>.
+                </p>
+              </div>
+
+              {/* Direct WhatsApp Community Button */}
+              <div className="p-4 bg-white/10 border border-white/15 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold block">
+                    Official G3 WhatsApp Group:
+                  </span>
+                  <span className="text-xs text-emerald-100">Join the participant cohort right away:</span>
+                </div>
+                <a
+                  href={G3_WHATSAPP_GROUP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-5 py-3 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md inline-flex items-center justify-center gap-2 shrink-0"
+                >
+                  <MessageCircle size={16} className="fill-slate-950" />
+                  <span>Join WhatsApp Group</span>
+                  <ExternalLink size={13} />
+                </a>
+              </div>
+
+              {gfSuccess ? (
+                <div className="bg-emerald-950/70 border border-emerald-400/40 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 size={24} className="text-[#25D366] shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-300 font-bold">
+                        Email Dispatched • REF: {gfSuccess.id}
+                      </span>
+                      <h4 className="text-base font-extrabold text-white">
+                        Thank You, {gfSuccess.fullName}! Confirmation Sent.
+                      </h4>
+                      <p className="text-xs text-emerald-100/90 leading-relaxed">
+                        We sent your official confirmation email with complete event schedules to <strong>{gfSuccess.email}</strong>.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <a
+                      href={G3_WHATSAPP_GROUP_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-5 py-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-1.5 shadow-md"
+                    >
+                      <MessageCircle size={15} className="fill-slate-950" />
+                      <span>Open G3 WhatsApp Group</span>
+                      <ExternalLink size={13} />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setShowPostSubmitModal(false)}
+                      className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleGoogleFormQuickConfirm} className="space-y-3.5">
+                  {gfError && (
+                    <div className="p-3 bg-rose-500/20 border border-rose-400/40 rounded-xl text-xs text-rose-100 flex items-center gap-2">
+                      <AlertCircle size={15} className="shrink-0 text-rose-300" />
+                      <span>{gfError}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                        Full Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={gfName}
+                        onChange={(e) => setGfName(e.target.value)}
+                        placeholder="Enter your full name"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                        Email Address *
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={gfEmail}
+                        onChange={(e) => setGfEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                        Phone / WhatsApp Number
+                      </label>
+                      <input
+                        type="tel"
+                        value={gfPhone}
+                        onChange={(e) => setGfPhone(e.target.value)}
+                        placeholder="+234 800 000 0000"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                        Role / Category
+                      </label>
+                      <select
+                        value={gfRole}
+                        onChange={(e) => setGfRole(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      >
+                        {G3_ROLE_OPTIONS.map((role) => (
+                          <option key={role} value={role}>
+                            {role}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={gfSending}
+                    className="w-full py-3.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md inline-flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-60"
+                  >
+                    {gfSending ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Sending Confirmation Email...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mail size={16} />
+                        <span>Send Confirmation Email &amp; Open WhatsApp</span>
+                        <ArrowRight size={15} />
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

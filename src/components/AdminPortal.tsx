@@ -897,12 +897,13 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         } catch {}
 
         if (!serverSession) {
-          serverSession = await createClientSignedSession(
+          serverSession = (await createClientSignedSession(
             cleanEmail,
             resolvedRole as any,
             resolvedAllowedTabs,
-            resolvedCanWrite
-          );
+            resolvedCanWrite,
+            resolvedFullName
+          )) as any;
         }
       }
 
@@ -1197,12 +1198,13 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       } catch {}
 
       if (!googleSession) {
-        googleSession = await createClientSignedSession(
+        googleSession = (await createClientSignedSession(
           cleanEmail,
           resolvedRole as any,
           resolvedAllowedTabs,
-          resolvedCanWrite
-        );
+          resolvedCanWrite,
+          user.displayName || undefined
+        )) as any;
       }
 
       const matchedUser: AdminUser = {
@@ -2865,150 +2867,156 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             
             {/* Tab: Dashboard Overview */}
             {activeTab === "dashboard" && (
-              <DashboardOverview
-                key="dashboard"
-                registrations={registrations}
-                visitorCheckins={visitorCheckins}
-                isSuperAdmin={isSuperAdmin}
-                currentEmail={currentEmail}
-                currentAdminName={currentAdminUser?.fullName}
-                onNavigateTab={setActiveTab}
-                onQuickCreateMember={() => {
-                  setQuickCreateModalTab("member");
-                  setIsQuickCreateModalOpen(true);
-                }}
-                onQuickCreateAnnouncement={() => {
-                  setQuickCreateModalTab("announcement");
-                  setIsQuickCreateModalOpen(true);
-                }}
-                latestLogs={terminalLogs}
-                pendingSyncCount={pendingSyncCount}
-                failedSubmissionsCount={failedSubmissionsCount}
-              />
+              <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <DashboardOverview
+                  registrations={registrations}
+                  visitorCheckins={visitorCheckins}
+                  isSuperAdmin={isSuperAdmin}
+                  currentEmail={currentEmail}
+                  currentAdminName={currentAdminUser?.fullName}
+                  onNavigateTab={setActiveTab}
+                  onQuickCreateMember={() => {
+                    setQuickCreateModalTab("member");
+                    setIsQuickCreateModalOpen(true);
+                  }}
+                  onQuickCreateAnnouncement={() => {
+                    setQuickCreateModalTab("announcement");
+                    setIsQuickCreateModalOpen(true);
+                  }}
+                  latestLogs={terminalLogs}
+                  pendingSyncCount={pendingSyncCount}
+                  failedSubmissionsCount={failedSubmissionsCount}
+                />
+              </motion.div>
             )}
 
             {/* Tab: Corper Impact Initiative (CII) Registry */}
             {activeTab === "reg-cii" && (
-              <DatatableView
-                key="reg-cii"
-                registrations={registrations.filter(reg => reg.profileType?.startsWith("cii"))}
-                filteredRegistrations={filteredRegistrations.filter(reg => reg.profileType?.startsWith("cii"))}
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                selectedProfileFilter={selectedProfileFilter}
-                setSelectedProfileFilter={setSelectedProfileFilter}
-                selectedLocationFilter={selectedLocationFilter}
-                setSelectedLocationFilter={setSelectedLocationFilter}
-                selectedStatusFilter={selectedStatusFilter}
-                setSelectedStatusFilter={setSelectedStatusFilter}
-                selectedDateFilter={selectedDateFilter}
-                setSelectedDateFilter={setSelectedDateFilter}
-                selectedPaymentStatusFilter={selectedPaymentStatusFilter}
-                setSelectedPaymentStatusFilter={setSelectedPaymentStatusFilter}
-                registryGroupFilter={registryGroupFilter}
-                setRegistryGroupFilter={setRegistryGroupFilter}
-                uniqueLocations={uniqueLocations}
-                onSelectMember={setSelectedMemberProfile}
-                onClearFilters={handleClearFilters}
-                onQuickCreateMember={() => {
-                  setQuickCreateModalTab("member");
-                  setIsQuickCreateModalOpen(true);
-                }}
-                onExportCSV={handleExportCSV}
-                onImportCSV={handleImportCSV}
-                getProfileLabel={getProfileLabel}
-                getProfileBadgeTheme={getProfileBadgeTheme}
-                getStatusBadgeColor={getStatusBadgeColor}
-                forceSegment="cii"
-              />
+              <motion.div key="reg-cii" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <DatatableView
+                  registrations={registrations.filter(reg => reg.profileType?.startsWith("cii"))}
+                  filteredRegistrations={filteredRegistrations.filter(reg => reg.profileType?.startsWith("cii"))}
+                  searchQuery={searchQuery}
+                  setSearchQuery={setSearchQuery}
+                  selectedProfileFilter={selectedProfileFilter}
+                  setSelectedProfileFilter={setSelectedProfileFilter}
+                  selectedLocationFilter={selectedLocationFilter}
+                  setSelectedLocationFilter={setSelectedLocationFilter}
+                  selectedStatusFilter={selectedStatusFilter}
+                  setSelectedStatusFilter={setSelectedStatusFilter}
+                  selectedDateFilter={selectedDateFilter}
+                  setSelectedDateFilter={setSelectedDateFilter}
+                  selectedPaymentStatusFilter={selectedPaymentStatusFilter}
+                  setSelectedPaymentStatusFilter={setSelectedPaymentStatusFilter}
+                  registryGroupFilter={registryGroupFilter}
+                  setRegistryGroupFilter={setRegistryGroupFilter}
+                  uniqueLocations={uniqueLocations}
+                  onSelectMember={setSelectedMemberProfile}
+                  onClearFilters={handleClearFilters}
+                  onQuickCreateMember={() => {
+                    setQuickCreateModalTab("member");
+                    setIsQuickCreateModalOpen(true);
+                  }}
+                  onExportCSV={handleExportCSV}
+                  onImportCSV={handleImportCSV}
+                  getProfileLabel={getProfileLabel}
+                  getProfileBadgeTheme={getProfileBadgeTheme}
+                  getStatusBadgeColor={getStatusBadgeColor}
+                  forceSegment="cii"
+                />
+              </motion.div>
             )}
 
             {/* Tab: Right-Minds Africa (RMA) Registry */}
             {activeTab === "reg-rma" && (
-              <DatatableView
-                key="reg-rma"
-                registrations={registrations.filter(reg => !reg.profileType?.startsWith("cii"))}
-                filteredRegistrations={filteredRegistrations.filter(reg => !reg.profileType?.startsWith("cii"))}
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                selectedProfileFilter={selectedProfileFilter}
-                setSelectedProfileFilter={setSelectedProfileFilter}
-                selectedLocationFilter={selectedLocationFilter}
-                setSelectedLocationFilter={setSelectedLocationFilter}
-                selectedStatusFilter={selectedStatusFilter}
-                setSelectedStatusFilter={setSelectedStatusFilter}
-                selectedDateFilter={selectedDateFilter}
-                setSelectedDateFilter={setSelectedDateFilter}
-                selectedPaymentStatusFilter={selectedPaymentStatusFilter}
-                setSelectedPaymentStatusFilter={setSelectedPaymentStatusFilter}
-                registryGroupFilter={registryGroupFilter}
-                setRegistryGroupFilter={setRegistryGroupFilter}
-                uniqueLocations={uniqueLocations}
-                onSelectMember={setSelectedMemberProfile}
-                onClearFilters={handleClearFilters}
-                onQuickCreateMember={() => {
-                  setQuickCreateModalTab("member");
-                  setIsQuickCreateModalOpen(true);
-                }}
-                onExportCSV={handleExportCSV}
-                onImportCSV={handleImportCSV}
-                getProfileLabel={getProfileLabel}
-                getProfileBadgeTheme={getProfileBadgeTheme}
-                getStatusBadgeColor={getStatusBadgeColor}
-                forceSegment="rma"
-              />
+              <motion.div key="reg-rma" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <DatatableView
+                  registrations={registrations.filter(reg => !reg.profileType?.startsWith("cii"))}
+                  filteredRegistrations={filteredRegistrations.filter(reg => !reg.profileType?.startsWith("cii"))}
+                  searchQuery={searchQuery}
+                  setSearchQuery={setSearchQuery}
+                  selectedProfileFilter={selectedProfileFilter}
+                  setSelectedProfileFilter={setSelectedProfileFilter}
+                  selectedLocationFilter={selectedLocationFilter}
+                  setSelectedLocationFilter={setSelectedLocationFilter}
+                  selectedStatusFilter={selectedStatusFilter}
+                  setSelectedStatusFilter={setSelectedStatusFilter}
+                  selectedDateFilter={selectedDateFilter}
+                  setSelectedDateFilter={setSelectedDateFilter}
+                  selectedPaymentStatusFilter={selectedPaymentStatusFilter}
+                  setSelectedPaymentStatusFilter={setSelectedPaymentStatusFilter}
+                  registryGroupFilter={registryGroupFilter}
+                  setRegistryGroupFilter={setRegistryGroupFilter}
+                  uniqueLocations={uniqueLocations}
+                  onSelectMember={setSelectedMemberProfile}
+                  onClearFilters={handleClearFilters}
+                  onQuickCreateMember={() => {
+                    setQuickCreateModalTab("member");
+                    setIsQuickCreateModalOpen(true);
+                  }}
+                  onExportCSV={handleExportCSV}
+                  onImportCSV={handleImportCSV}
+                  getProfileLabel={getProfileLabel}
+                  getProfileBadgeTheme={getProfileBadgeTheme}
+                  getStatusBadgeColor={getStatusBadgeColor}
+                  forceSegment="rma"
+                />
+              </motion.div>
             )}
 
             {/* Tab: Live Visitors monitoring tool */}
             {activeTab === "visitors-live" && (
-              <AdminVisitorMonitoring
-                key="visitors-live"
-                visitorCheckins={visitorCheckins}
-              />
+              <motion.div key="visitors-live" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <AdminVisitorMonitoring
+                  visitorCheckins={visitorCheckins}
+                />
+              </motion.div>
             )}
 
             {/* Tab: Web Analytics interactive data tables */}
             {activeTab === "visitors-analytics" && (
-              <AdminAnalytics 
-                key="visitors-analytics"
-                registrations={registrations} 
-                visitorCheckins={visitorCheckins}
-                activeProfileFilter={selectedProfileFilter}
-                activeLocationFilter={selectedLocationFilter}
-                onSelectFilter={(type, val) => {
-                  if (type === "profile") {
-                    setSelectedProfileFilter(val);
-                    // Route to correct registry segment
-                    if (val === "cii") {
-                      setActiveTab("reg-cii");
+              <motion.div key="visitors-analytics" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <AdminAnalytics 
+                  registrations={registrations} 
+                  visitorCheckins={visitorCheckins}
+                  activeProfileFilter={selectedProfileFilter}
+                  activeLocationFilter={selectedLocationFilter}
+                  onSelectFilter={(type, val) => {
+                    if (type === "profile") {
+                      setSelectedProfileFilter(val);
+                      // Route to correct registry segment
+                      if (val === "cii") {
+                        setActiveTab("reg-cii");
+                      } else {
+                        setActiveTab("reg-rma");
+                      }
                     } else {
+                      setSelectedLocationFilter(val);
                       setActiveTab("reg-rma");
                     }
-                  } else {
-                    setSelectedLocationFilter(val);
-                    setActiveTab("reg-rma");
-                  }
-                }}
-              />
+                  }}
+                />
+              </motion.div>
             )}
 
             {/* Tab: Platform User List and Action Provisioning */}
             {activeTab === "user-management" && (
-              <AdminUserManagement
-                key="user-management"
-                hasWriteAccess={hasWriteAccess}
-                isSuperAdmin={isSuperAdmin}
-                currentAdminEmail={currentEmail}
-                onLogAction={(msg) => {
-                  addTerminalLog(msg);
-                  refreshAdminOperatorsDirectory();
-                  saveAuditLog({
-                    adminEmail: currentEmail,
-                    action: "Platform User Record Shifted",
-                    details: msg
-                  }).catch(console.error);
-                }}
-              />
+              <motion.div key="user-management" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <AdminUserManagement
+                  hasWriteAccess={hasWriteAccess}
+                  isSuperAdmin={isSuperAdmin}
+                  currentAdminEmail={currentEmail}
+                  onLogAction={(msg) => {
+                    addTerminalLog(msg);
+                    refreshAdminOperatorsDirectory();
+                    saveAuditLog({
+                      adminEmail: currentEmail,
+                      action: "Platform User Record Shifted",
+                      details: msg
+                    }).catch(console.error);
+                  }}
+                />
+              </motion.div>
             )}
 
             {/* Tab: Super Admin Access Roles & Operator Provisioning */}
