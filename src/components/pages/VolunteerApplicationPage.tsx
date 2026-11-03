@@ -70,10 +70,11 @@ export const SKILL_OPTIONS = [
   "Other"
 ];
 
-// Default Google Form URL configured for Right-Minds Africa Hub Volunteer Applications
 const DEFAULT_GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScq8FZgaFF_hYxLbKk0eLjLwuMW1iYRPjZpYfMljdQ3k_oCHQ/viewform?embedded=true";
-export const INTERNSHIP_WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC";
-export const G3_WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
+export const DEFAULT_WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
+export const INTERNSHIP_WHATSAPP_GROUP_URL = DEFAULT_WHATSAPP_GROUP_URL;
+export const LEGACY_WHATSAPP_FALLBACK_URL = "https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC";
+export const G3_WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/J4QmEIJbtPiCXLGm5ELHc5";
 const CONNECTED_GOOGLE_EMAIL = "olosundelouis@gmail.com";
 
 export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplicationPageProps) {

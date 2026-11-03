@@ -31,10 +31,16 @@ import {
   MessageCircle,
   Copy,
   Check,
-  AlertCircle
+  AlertCircle,
+  Download,
+  ZoomIn,
+  Phone,
+  Globe,
+  X
 } from "lucide-react";
 import { saveRegistration } from "../lib/db";
 
+const G3_FLYER_IMAGE = "/assets/aistudio/RMA_G3A_aa832557.png";
 const G3_GOOGLE_FORM_DIRECT_URL = "https://forms.gle/7h9muLz6rLnB2spV7";
 const G3_GOOGLE_FORM_EMBED_URL =
   "https://docs.google.com/forms/d/e/1FAIpQLSdE1ggFc9mNCRqHb9odQnIdJLaLNs_ZoomB66JOBWFH5yOSSg/viewform?embedded=true";
@@ -73,6 +79,7 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
   const [googleFormSubmitted, setGoogleFormSubmitted] = useState<boolean>(false);
   const [showPostSubmitModal, setShowPostSubmitModal] = useState<boolean>(false);
   const [copiedWhatsapp, setCopiedWhatsapp] = useState<boolean>(false);
+  const [isFlyerModalOpen, setIsFlyerModalOpen] = useState<boolean>(false);
 
   // Quick Confirmation Email & WhatsApp Dispatch state
   const [gfName, setGfName] = useState<string>("");
@@ -409,8 +416,72 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
               </div>
             </div>
 
-            {/* RIGHT COLUMN: THE OVERARCHING QUESTION & PROGRESSIVE APPROACH CARD */}
+            {/* RIGHT COLUMN: OFFICIAL FLYER SHOWCASE & OVERARCHING QUESTION */}
             <div className="lg:col-span-5 space-y-5">
+              {/* Official G3 Summit Flyer Card */}
+              <div className="bg-white border-2 border-brand-orange/30 rounded-2xl p-4 sm:p-5 shadow-lg space-y-4 text-left relative overflow-hidden group">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-brand-orange animate-pulse" />
+                    <span className="text-[11px] font-black uppercase tracking-widest text-brand-orange font-mono">
+                      Official Summit Flyer
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full bg-brand-blue/10 text-brand-blue text-[10px] font-bold uppercase font-mono">
+                    2026/2027 Edition
+                  </span>
+                </div>
+
+                {/* Flyer Image with interactive zoom trigger */}
+                <div
+                  onClick={() => setIsFlyerModalOpen(true)}
+                  className="relative rounded-xl overflow-hidden cursor-pointer border border-slate-200 shadow-sm bg-slate-900 group/img aspect-square max-h-[380px] sm:max-h-[420px] flex items-center justify-center"
+                >
+                  <img
+                    src={G3_FLYER_IMAGE}
+                    alt="Right-Minds Africa Hub Anticipate G3 Summit 2026/2027 Official Flyer"
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-105"
+                    loading="eager"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover/img:opacity-100 transition-opacity flex items-end justify-between p-4 text-white">
+                    <span className="text-xs font-bold inline-flex items-center gap-1.5 bg-black/60 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-white/20">
+                      <ZoomIn size={14} /> Click to View Full Flyer
+                    </span>
+                    <a
+                      href={G3_FLYER_IMAGE}
+                      download="RMA_G3_Summit_2026_2027_Official_Flyer.png"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs font-bold inline-flex items-center gap-1.5 bg-brand-orange hover:bg-orange-600 px-3 py-1.5 rounded-lg text-white shadow-sm transition-colors"
+                    >
+                      <Download size={14} /> Download
+                    </a>
+                  </div>
+                </div>
+
+                {/* Key Info Pill from Flyer */}
+                <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl space-y-2">
+                  <div className="flex flex-wrap items-center justify-between text-xs font-bold text-slate-800 gap-2">
+                    <span className="flex items-center gap-1.5 text-brand-blue">
+                      <Phone size={13} className="text-brand-orange" /> +234 701 094 3003
+                    </span>
+                    <span className="text-slate-500 font-mono text-[11px]">
+                      @Rightminds Africa Hub
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/60 text-[11px]">
+                    <span className="text-slate-500">For information, partnerships or slots:</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsFlyerModalOpen(true)}
+                      className="text-brand-orange hover:text-orange-700 font-bold inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Enlarge Flyer</span>
+                      <ZoomIn size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {/* Overarching Question Spotlight Card */}
               <div className="bg-brand-blue text-white rounded-2xl p-6 sm:p-8 space-y-5 shadow-xl relative overflow-hidden text-left">
                 <div className="absolute -top-12 -right-12 w-32 h-32 bg-brand-orange/20 rounded-full blur-2xl pointer-events-none" />
@@ -764,36 +835,72 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
                 </p>
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 space-y-4 text-left shadow-xs flex-1">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-brand-orange/10 text-brand-orange flex items-center justify-center shrink-0">
-                    <MessageSquare size={20} />
+              <div className="bg-white border-2 border-brand-orange/30 rounded-2xl p-6 sm:p-7 space-y-5 text-left shadow-md flex-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-brand-orange/10 text-brand-orange flex items-center justify-center shrink-0">
+                      <MessageSquare size={20} />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-brand-orange font-mono block">
+                        Flyer, Publicity & Preparation Direction
+                      </span>
+                      <h3 className="text-lg font-extrabold text-brand-blue font-display">
+                        Official G3 Summit Publicity Materials
+                      </h3>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-brand-orange font-mono block">
-                      Flyer, Publicity & Preparation Direction
-                    </span>
-                    <h3 className="text-lg font-extrabold text-brand-blue font-display">
-                      Clear Weekly Topics & Dates Ahead of Time
-                    </h3>
-                  </div>
+                  <span className="self-start sm:self-auto px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold font-mono border border-emerald-200">
+                    Official Release
+                  </span>
                 </div>
-                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                  All weekly topics and their corresponding Saturday dates are published clearly ahead of the programme so prospective participants understand what each Saturday&apos;s conversation covers and can anticipate, reflect, and prepare meaningfully for every session.
-                </p>
-                <div className="pt-2 flex flex-wrap gap-2">
-                  <button
-                    onClick={scrollToRegister}
-                    className="px-4 py-2.5 bg-brand-orange hover:bg-brand-orange/90 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer inline-flex items-center gap-1.5"
+
+                <div className="flex flex-col sm:flex-row gap-5 items-start">
+                  {/* Thumbnail */}
+                  <div
+                    onClick={() => setIsFlyerModalOpen(true)}
+                    className="w-32 sm:w-36 aspect-square rounded-xl overflow-hidden border border-slate-200 shadow-sm shrink-0 cursor-pointer group relative bg-slate-900"
                   >
-                    Register Now <ArrowRight size={13} />
-                  </button>
-                  <button
-                    onClick={() => onOpenJoin("community")}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-brand-blue text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                  >
-                    Join RMA Community
-                  </button>
+                    <img
+                      src={G3_FLYER_IMAGE}
+                      alt="G3 Summit 2026/2027 Official Flyer"
+                      className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                      <ZoomIn size={20} />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 flex-1">
+                    <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                      All weekly topics, speakers, and Saturday dates are clearly stated ahead of time on the official publicity flyer so prospective participants understand what each Saturday&apos;s conversation covers and can anticipate, prepare, and reflect meaningfully for every session.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsFlyerModalOpen(true)}
+                        className="px-4 py-2 bg-brand-blue hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
+                      >
+                        <ZoomIn size={13} />
+                        <span>Enlarge Flyer</span>
+                      </button>
+                      <a
+                        href={G3_FLYER_IMAGE}
+                        download="RMA_G3_Summit_2026_2027_Official_Flyer.png"
+                        className="px-4 py-2 bg-white hover:bg-slate-50 text-brand-blue border border-slate-300 text-xs font-bold rounded-xl transition-all inline-flex items-center gap-1.5 shadow-2xs"
+                      >
+                        <Download size={13} />
+                        <span>Download Flyer</span>
+                      </a>
+                      <button
+                        onClick={scrollToRegister}
+                        className="px-4 py-2 bg-brand-orange hover:bg-brand-orange/90 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
+                      >
+                        <span>Register Now</span>
+                        <ArrowRight size={13} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1087,6 +1194,92 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
                   </button>
                 </form>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* =========================================================================
+          FULL-SCREEN OFFICIAL G3 SUMMIT FLYER LIGHTBOX MODAL
+          ========================================================================= */}
+      <AnimatePresence>
+        {isFlyerModalOpen && (
+          <div
+            onClick={() => setIsFlyerModalOpen(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md overflow-y-auto cursor-zoom-out"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 15 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-w-3xl w-full bg-slate-900 border border-white/20 rounded-3xl overflow-hidden shadow-2xl cursor-default text-left flex flex-col"
+            >
+              {/* Header Controls */}
+              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10 bg-slate-950/70 text-white">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-brand-orange animate-pulse" />
+                  <div>
+                    <h3 className="text-sm sm:text-base font-extrabold uppercase tracking-tight text-white font-display">
+                      Anticipate G3 Summit 2026/2027 — Official Flyer
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-mono">
+                      Right-Minds Africa Hub • God. Growth. Goal.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <a
+                    href={G3_FLYER_IMAGE}
+                    download="RMA_G3_Summit_2026_2027_Official_Flyer.png"
+                    className="px-3.5 py-1.5 bg-brand-orange hover:bg-orange-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all inline-flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Download size={13} />
+                    <span>Download</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setIsFlyerModalOpen(false)}
+                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold cursor-pointer transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Flyer High-Res Image Canvas */}
+              <div className="p-3 sm:p-6 bg-black/60 flex items-center justify-center max-h-[75vh] overflow-auto">
+                <img
+                  src={G3_FLYER_IMAGE}
+                  alt="Right-Minds Africa Hub Anticipate G3 Summit 2026/2027 Official Flyer"
+                  className="max-h-[72vh] w-auto max-w-full rounded-2xl shadow-2xl object-contain border border-white/10"
+                />
+              </div>
+
+              {/* Footer Meta & Action Bar */}
+              <div className="flex flex-col sm:flex-row items-center justify-between p-4 sm:p-5 border-t border-white/10 bg-slate-950/80 gap-3 text-xs text-slate-300">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="flex items-center gap-1.5 text-brand-orange font-bold font-mono">
+                    <Phone size={13} /> +234 701 094 3003
+                  </span>
+                  <span className="text-slate-500">•</span>
+                  <span className="font-mono text-slate-300">@Rightminds Africa Hub</span>
+                  <span className="text-slate-500">•</span>
+                  <span className="font-mono text-slate-300">rightmindsafricahub.ai.studio</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFlyerModalOpen(false);
+                    scrollToRegister();
+                  }}
+                  className="px-4 py-2 bg-brand-orange hover:bg-orange-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                >
+                  <span>Register for G3 Summit</span>
+                  <ArrowRight size={13} />
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

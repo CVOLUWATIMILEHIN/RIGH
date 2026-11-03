@@ -349,24 +349,43 @@ export default function Homepage({ onOpenJoin, onNavigate }: HomepageProps) {
           </div>
 
           {/* G3 Flagship Fellowship Spotlight Banner */}
-          <div className="mt-8 p-6 sm:p-8 bg-white border border-slate-200/90 rounded-2xl shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-6 text-left">
-            <div className="space-y-2 max-w-2xl">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-md bg-brand-orange/10 text-brand-orange text-[10px] font-bold uppercase tracking-wider font-mono border border-brand-orange/20">
-                  G3 SERIES 2026/2027 • THE RELEVANCE QUESTION
-                </span>
-                <span className="text-xs font-mono font-semibold text-slate-500">
-                  Every Saturday in Dec 2026 &amp; Jan 2, 2027 • God. Growth. Goals.
+          <div className="mt-8 p-6 sm:p-8 bg-white border-2 border-brand-orange/30 rounded-2xl shadow-sm flex flex-col lg:flex-row items-center justify-between gap-6 text-left group">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 flex-1">
+              {/* Official Flyer Thumbnail */}
+              <div
+                onClick={() => onNavigate("initiatives-g3")}
+                className="w-28 sm:w-32 aspect-square rounded-xl overflow-hidden border border-slate-200 shadow-sm shrink-0 cursor-pointer relative bg-slate-900 group/flyer hover:ring-2 hover:ring-brand-orange transition-all"
+              >
+                <img
+                  src="/assets/aistudio/RMA_G3A_aa832557.png"
+                  alt="Anticipate G3 Summit 2026/2027 Official Flyer"
+                  className="w-full h-full object-cover transition-transform group-hover/flyer:scale-105"
+                  loading="lazy"
+                />
+                <span className="absolute bottom-1.5 inset-x-1.5 py-0.5 bg-black/75 backdrop-blur-xs text-[9px] font-bold text-center text-white rounded font-mono uppercase tracking-widest">
+                  Summit Flyer
                 </span>
               </div>
-              <h3 className="text-lg sm:text-xl font-extrabold text-brand-blue font-display tracking-tight">
-                The Human Advantage: Who Will You Become in a Changing World?
-              </h3>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Five progressive Saturday conversations exploring Identity, Skills &amp; Value Creation, Adaptability &amp; AI, Relationships &amp; Influence, and Intentional Living &amp; Execution—through the three interconnected dimensions of God, Growth, and Goals.
-              </p>
+
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-md bg-brand-orange/10 text-brand-orange text-[10px] font-bold uppercase tracking-wider font-mono border border-brand-orange/20">
+                    G3 SERIES 2026/2027 • THE RELEVANCE QUESTION
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-slate-500">
+                    Every Saturday in Dec 2026 &amp; Jan 2, 2027 • God. Growth. Goals.
+                  </span>
+                </div>
+                <h3 className="text-lg sm:text-xl font-extrabold text-brand-blue font-display tracking-tight">
+                  The Human Advantage: Who Will You Become in a Changing World?
+                </h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Five progressive Saturday conversations exploring Identity, Skills &amp; Value Creation, Adaptability &amp; AI, Relationships &amp; Influence, and Intentional Living &amp; Execution—through the three interconnected dimensions of God, Growth, and Goals.
+                </p>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3 shrink-0">
+
+            <div className="flex flex-wrap items-center gap-3 shrink-0 self-start sm:self-auto">
               <button
                 onClick={() => onNavigate("initiatives-g3")}
                 className="px-6 py-3 bg-brand-orange hover:bg-brand-orange/90 text-white text-xs font-bold rounded-xl uppercase tracking-wider transition-all cursor-pointer font-mono inline-flex items-center gap-2 shadow-sm"
