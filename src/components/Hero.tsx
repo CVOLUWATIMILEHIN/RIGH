@@ -5,8 +5,8 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowRight, Calendar, Clock, MapPin, Users, Sparkles, ChevronRight, ChevronLeft, Pause, Play, Video } from "lucide-react";
-import { getCMSConfig, PRELOADED_HERO_IMAGES } from "./AdminCMS";
+import { ArrowRight, Calendar, Clock, MapPin, Users, Sparkles, ChevronRight, ChevronLeft, Pause, Play, Video, Compass, Award } from "lucide-react";
+import { getCMSConfig, PRELOADED_HERO_IMAGES, normalizeHeroSlides, RMA_INTRO_SLIDE } from "./AdminCMS";
 import { fetchAllCMSFromSupabase, subscribeToSupabaseCMSRealtime } from "../lib/supabaseCms";
 
 interface HeroProps {
@@ -65,7 +65,10 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
     // 1. Initial live load from Supabase
     fetchAllCMSFromSupabase().then((data) => {
       if (data && data.cmsConfig) {
-        setCms(data.cmsConfig);
+        setCms({
+          ...data.cmsConfig,
+          heroSlides: normalizeHeroSlides(data.cmsConfig.heroSlides)
+        });
       }
     }).catch(() => {
       setCms(getCMSConfig());
@@ -75,7 +78,12 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
     const unsubscribeRealtime = subscribeToSupabaseCMSRealtime((table, payload) => {
       if (table === "pages") {
         fetchAllCMSFromSupabase().then((data) => {
-          if (data && data.cmsConfig) setCms(data.cmsConfig);
+          if (data && data.cmsConfig) {
+            setCms({
+              ...data.cmsConfig,
+              heroSlides: normalizeHeroSlides(data.cmsConfig.heroSlides)
+            });
+          }
         });
       }
     });
@@ -95,15 +103,16 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
 
   // Filter slides that are active/enabled based on dates
   const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const normalizedSlides = normalizeHeroSlides(cms.heroSlides);
 
-  const activeSlides = cms.heroSlides.filter(slide => {
+  const activeSlides = normalizedSlides.filter(slide => {
     if (!slide.enabled) return false;
     if (slide.scheduleStart && todayStr < slide.scheduleStart) return false;
     if (slide.scheduleEnd && todayStr > slide.scheduleEnd) return false;
     return true;
   });
 
-  const slidesToRender = activeSlides.length > 0 ? activeSlides : cms.heroSlides;
+  const slidesToRender = activeSlides.length > 0 ? activeSlides : normalizedSlides;
   
   // Guard currentSlide state when active slides length changes
   useEffect(() => {
@@ -114,19 +123,11 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
 
   // Safeguard index boundaries
   const slideIndex = currentSlide >= slidesToRender.length ? 0 : currentSlide;
-  const slide = slidesToRender[slideIndex] || {
-    imageUrl: "yap_conference",
-    caption: "Young African Leaders Conference",
-    badge: "BUILDING AFRICA'S NEXT GENERATION OF LEADERS",
-    headline: "Transforming African Minds",
-    description: "Right-Minds Africa is a premier leadership and productivity coaching academy raising high-performance, character-driven young African leaders.",
-    primaryButtonText: "Join Our Community",
-    primaryButtonAction: "corps_member",
-    secondaryButtonText: "Explore Programs",
-    secondaryButtonAction: "programs-seminar",
-    overlayOpacity: 35,
-    showEventCard: false
-  };
+  const slide = slidesToRender[slideIndex] || RMA_INTRO_SLIDE;
+  const isIntroSlide =
+    slideIndex === 0 ||
+    slide.id === "slide-rma-intro" ||
+    (slide.badge && slide.badge.toUpperCase().includes("WELCOME TO RIGHT-MINDS AFRICA"));
 
   // Dynamic automatic slideshow transition effect
   useEffect(() => {
@@ -165,9 +166,9 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
         const idMap: Record<string, string> = {
           "initiatives-cii": "#cii-section",
           "programs-seminar": "#programs",
-          "about": "#about"
+          "about": "#about-section"
         };
-        const el = document.querySelector(idMap[action]);
+        const el = document.querySelector(idMap[action] || "#about-section");
         if (el) el.scrollIntoView({ behavior: "smooth" });
       }
     } else {
@@ -264,10 +265,10 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
         <div className="w-full mx-auto px-4 sm:px-6 md:px-12 lg:px-14 xl:pl-[8%] xl:pr-16 2xl:pl-[10%] 2xl:pr-[72px] max-w-full lg:max-w-[95%] xl:max-w-[92%] 2xl:max-w-[1880px] flex-1 flex flex-col justify-between relative z-15">
           
           {/* Inner Centered Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-20 xl:gap-24 items-center my-auto py-8 sm:py-12 w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 xl:gap-20 items-center my-auto py-8 sm:py-12 w-full">
             
             {/* Left Column (Content slideshow synchronized) */}
-            <div className={`text-left ${slide.showEventCard ? "lg:col-span-7" : "lg:col-span-12"}`}>
+            <div className={`text-left ${(slide.showEventCard || isIntroSlide) ? "lg:col-span-7" : "lg:col-span-12"}`}>
               <AnimatePresence mode="wait">
                 <motion.div
                   key={slideIndex}
@@ -275,43 +276,73 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 12 }}
                   transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                  className="flex flex-col max-w-[650px] w-full"
+                  className="flex flex-col max-w-[680px] w-full"
                 >
                   {/* Eyebrow */}
                   <div className="flex items-center gap-2">
                     <span className="text-xs sm:text-sm font-bold tracking-widest text-brand-orange uppercase font-mono">
-                      {slide.badge || "BUILDING AFRICA'S NEXT GENERATION OF LEADERS"}
+                      {slide.badge || "WELCOME TO RIGHT-MINDS AFRICA • THINK RIGHT • LIVE RIGHT • LEAD RIGHT"}
                     </span>
                   </div>
 
                   {/* Headline */}
-                  <h1 className="text-3xl sm:text-5xl lg:text-6xl xl:text-[64px] font-extrabold tracking-tight leading-[1.08] text-white font-display mt-4">
-                    {slide.headline || "Transforming African Minds"}
+                  <h1 className="text-3xl sm:text-5xl lg:text-6xl xl:text-[62px] font-extrabold tracking-tight leading-[1.08] text-white font-display mt-4">
+                    {slide.headline || "Shaping a Generation to Think Right, Live Right & Lead Right"}
                   </h1>
 
                   {/* Supporting description */}
-                  <p className="text-slate-200 text-base sm:text-lg xl:text-xl leading-relaxed font-normal max-w-[580px] opacity-95 mt-5">
-                    {slide.description || "Right-Minds Africa is a premier leadership and productivity coaching academy raising high-performance, character-driven young African leaders."}
+                  <p className="text-slate-200 text-base sm:text-lg xl:text-xl leading-relaxed font-normal max-w-[620px] opacity-95 mt-5">
+                    {slide.description || "Right-Minds Africa (RMA) is a pan-African leadership, mindset re-engineering, and personal mastery movement dedicated to liberating young Africans from limiting narratives."}
                   </p>
+
+                  {/* On the 1st Slider (About Right-Minds Africa), show the 3 Core Identity Pillars before What We Do */}
+                  {isIntroSlide && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 mt-6 max-w-[620px]">
+                      <div className="bg-white/8 border border-white/15 rounded-xl px-3.5 py-2.5 backdrop-blur-md">
+                        <div className="flex items-center gap-1.5 text-brand-orange font-mono text-[10px] font-bold uppercase tracking-wider">
+                          <Sparkles size={12} /> 01. Think Right
+                        </div>
+                        <p className="text-slate-200 text-xs mt-1 leading-snug">
+                          Mindset re-engineering & liberating young minds from limiting beliefs.
+                        </p>
+                      </div>
+                      <div className="bg-white/8 border border-white/15 rounded-xl px-3.5 py-2.5 backdrop-blur-md">
+                        <div className="flex items-center gap-1.5 text-brand-orange font-mono text-[10px] font-bold uppercase tracking-wider">
+                          <Compass size={12} /> 02. Live Right
+                        </div>
+                        <p className="text-slate-200 text-xs mt-1 leading-snug">
+                          Character mastery, intentional daily habits & personal accountability.
+                        </p>
+                      </div>
+                      <div className="bg-white/8 border border-white/15 rounded-xl px-3.5 py-2.5 backdrop-blur-md">
+                        <div className="flex items-center gap-1.5 text-brand-orange font-mono text-[10px] font-bold uppercase tracking-wider">
+                          <Award size={12} /> 03. Lead Right
+                        </div>
+                        <p className="text-slate-200 text-xs mt-1 leading-snug">
+                          Purpose-driven influence across campuses, NYSC & corporate Africa.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Synchronized Action buttons */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 mt-8">
                     <motion.button
-                      onClick={() => handleActionClick(slide.primaryButtonAction || "corps_member")}
+                      onClick={() => handleActionClick(slide.primaryButtonAction || "about")}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       className="px-6 sm:px-7 py-3.5 bg-brand-orange hover:bg-brand-orange/95 hover:shadow-lg hover:shadow-brand-orange/20 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer text-xs sm:text-sm uppercase tracking-wider shrink-0"
                     >
-                      {slide.primaryButtonText || "Join Community"} <ArrowRight size={15} />
+                      {slide.primaryButtonText || "Discover Who We Are"} <ArrowRight size={15} />
                     </motion.button>
                     
                     <motion.button
-                      onClick={() => handleActionClick(slide.secondaryButtonAction || "programs-seminar")}
+                      onClick={() => handleActionClick(slide.secondaryButtonAction || "corps_member")}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       className="px-6 sm:px-7 py-3.5 bg-white/10 hover:bg-white/15 border border-white/25 hover:border-white/40 text-white font-bold rounded-xl transition-all flex items-center justify-center cursor-pointer text-xs sm:text-sm uppercase tracking-wider backdrop-blur-md shrink-0"
                     >
-                      {slide.secondaryButtonText || "Explore Programs"}
+                      {slide.secondaryButtonText || "Join Our Community"}
                     </motion.button>
 
                     <motion.button
@@ -328,10 +359,66 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
               </AnimatePresence>
             </div>
 
-            {/* Right Column: Dynamic floating Event Card (scaled down by ~25% and beautifully aligned) */}
+            {/* Right Column: On Slide 1 (About RMA), show the Identity & Mandate Card; on subsequent slides, show the Event Card if enabled */}
             <div className="lg:col-span-5 flex items-center justify-center lg:justify-end w-full">
               <AnimatePresence mode="wait">
-                {slide.showEventCard && (
+                {isIntroSlide ? (
+                  <motion.div
+                    key="rma-intro-mandate-card"
+                    initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: -12 }}
+                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                    className="w-full max-w-[340px] sm:max-w-[370px]"
+                  >
+                    <div className="w-full bg-slate-900/55 border border-white/15 rounded-2xl p-5 sm:p-6 shadow-2xl backdrop-blur-xl relative overflow-hidden text-left">
+                      <div className="absolute -top-12 -right-12 w-28 h-28 bg-brand-orange/15 rounded-full blur-2xl pointer-events-none" />
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-brand-orange text-[10px] font-black uppercase tracking-widest text-white font-mono">
+                          <Sparkles size={10} /> Who We Are
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-300 uppercase tracking-wider">
+                          Slide 01 / Identity
+                        </span>
+                      </div>
+
+                      <h3 className="text-base sm:text-lg font-extrabold uppercase tracking-tight text-white mt-3.5 leading-snug font-display">
+                        About Right-Minds Africa
+                      </h3>
+
+                      <p className="text-slate-200 text-xs sm:text-[13px] mt-2 leading-relaxed">
+                        {cms.aboutMission || "We exist to raise a generation of highly competent, character-driven young Africans who take sovereignty over their minds, careers, finances, and callings."}
+                      </p>
+
+                      <div className="border-t border-white/10 my-3.5" />
+
+                      <div className="space-y-2 text-xs text-slate-200">
+                        <div className="flex items-start gap-2">
+                          <Users size={14} className="text-brand-orange shrink-0 mt-0.5" />
+                          <span>
+                            <strong className="text-white">Who We Empower:</strong> Teenagers, Undergraduates, NYSC Corps Members & Young Professionals.
+                          </span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <Compass size={14} className="text-brand-orange shrink-0 mt-0.5" />
+                          <span>
+                            <strong className="text-white">Our Vision:</strong> A prosperous, values-centered Africa led by transformed minds across regional chapters.
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                        <button
+                          onClick={handleNext}
+                          className="w-full py-2.5 px-4 bg-white/10 hover:bg-brand-orange text-white font-bold rounded-xl text-[11px] uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 border border-white/15 hover:border-brand-orange"
+                        >
+                          Next: See What We Do <ArrowRight size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ) : slide.showEventCard ? (
                   <motion.div
                     key={slideIndex}
                     initial={{ opacity: 0, scale: 0.96, y: 12 }}
@@ -395,7 +482,7 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
 
                     </motion.div>
                   </motion.div>
-                )}
+                ) : null}
               </AnimatePresence>
             </div>
 

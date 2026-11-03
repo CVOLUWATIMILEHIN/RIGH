@@ -7,7 +7,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from "./supabase";
-import { CMSConfig, DEFAULT_CMS } from "../components/AdminCMS";
+import { CMSConfig, DEFAULT_CMS, normalizeHeroSlides } from "../components/AdminCMS";
 import { EventModel } from "../components/AdminEvents";
 import { TeamMember } from "./db";
 import { PlatformTestimonial } from "./db";
@@ -85,9 +85,11 @@ export async function fetchAllCMSFromSupabase(): Promise<{
     // Parse CMS Config
     let resolvedCmsConfig: CMSConfig = DEFAULT_CMS;
     if (pagesRes.data && pagesRes.data.content) {
+      const content = pagesRes.data.content as CMSConfig;
       resolvedCmsConfig = {
         ...DEFAULT_CMS,
-        ...(pagesRes.data.content as CMSConfig)
+        ...content,
+        heroSlides: normalizeHeroSlides(content.heroSlides)
       };
       memoryCache.cmsConfig = resolvedCmsConfig;
     }

@@ -202,12 +202,31 @@ export interface CMSConfig {
   finalCtaBtn2Text: string;
 }
 
+export const RMA_INTRO_SLIDE: HeroSlide = {
+  id: "slide-rma-intro",
+  imageUrl: "conference",
+  caption: "Who We Are — Right-Minds Africa",
+  badge: "WELCOME TO RIGHT-MINDS AFRICA • THINK RIGHT • LIVE RIGHT • LEAD RIGHT",
+  headline: "Shaping a Generation to Think Right, Live Right & Lead Right",
+  description: "Right-Minds Africa (RMA) is a pan-African leadership, mindset re-engineering, and personal mastery movement dedicated to liberating young Africans from limiting narratives. Before we launch programs or train cohorts, we rebuild the inner architecture of teenagers, undergraduates, corps members, and emerging professionals to lead with character, clarity, and excellence across Africa.",
+  primaryButtonText: "Discover Who We Are",
+  primaryButtonAction: "about",
+  secondaryButtonText: "Join Our Community",
+  secondaryButtonAction: "corps_member",
+  enabled: true,
+  order: 1,
+  duration: 10,
+  overlayOpacity: 40,
+  showEventCard: false
+};
+
 const DEFAULT_SLIDES: HeroSlide[] = [
+  RMA_INTRO_SLIDE,
   {
     id: "slide-1",
     imageUrl: "yap_conference",
     caption: "YAP Annual Conference",
-    badge: "YAP CONFERENCE 2026",
+    badge: "WHAT WE DO • YAP CONFERENCE 2026",
     headline: "Building Africa's Growth Elite",
     description: "Join thousands of purpose-driven young leaders, seasoned mentors, and global speakers in Lagos for the continent's premier summit on corporate navigation, career branding, and personal sovereignty.",
     primaryButtonText: "Register for YAP",
@@ -215,7 +234,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     secondaryButtonText: "Explore Summit",
     secondaryButtonAction: "programs-seminar",
     enabled: true,
-    order: 1,
+    order: 2,
     duration: 8,
     overlayOpacity: 45,
     showEventCard: true,
@@ -228,7 +247,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     id: "slide-2",
     imageUrl: "career_bootcamp",
     caption: "CII Career Accelerator",
-    badge: "CORPER IMPACT INITIATIVE",
+    badge: "WHAT WE DO • CORPER IMPACT INITIATIVE",
     headline: "Transform Your Service Year Into Global Action",
     description: "Don't let your NYSC year slide into passive waiting. We equip corps members with professional CV workshops, financial sovereignty training, and high-demand digital skills to bridge the post-graduation talent gap.",
     primaryButtonText: "Apply for CII",
@@ -236,7 +255,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     secondaryButtonText: "Explore Curriculum",
     secondaryButtonAction: "initiatives-cii",
     enabled: true,
-    order: 2,
+    order: 3,
     duration: 8,
     overlayOpacity: 35,
     showEventCard: true,
@@ -249,7 +268,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     id: "slide-3",
     imageUrl: "auditorium",
     caption: "Personal Reinvention Coaching",
-    badge: "MONTHLY REINVENTION PROGRAM",
+    badge: "WHAT WE DO • MONTHLY REINVENTION PROGRAM",
     headline: "Re-Engineer Your Mind, Focus, and Routines",
     description: "A high-touch monthly coaching and mastermind ecosystem. Audit your weekly progress, dismantle procrastination loops, and build high-agency execution habits under direct expert guidance.",
     primaryButtonText: "Enroll in Reinvention",
@@ -257,7 +276,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     secondaryButtonText: "Browse Courses",
     secondaryButtonAction: "courses",
     enabled: true,
-    order: 3,
+    order: 4,
     duration: 8,
     overlayOpacity: 40,
     showEventCard: false
@@ -266,15 +285,15 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     id: "slide-4",
     imageUrl: "teens_classroom",
     caption: "Right-Minded Teens Initiative",
-    badge: "ADOLESCENT CHARACTER & GRIT",
-    headline: "Nurturing Growth Mindset Early",
+    badge: "WHAT WE DO • RIGHT-MINDED TEENS INITIATIVE",
+    headline: "Nurturing Character & Growth Mindset Early",
     description: "Empowering the next generation with values-based mentorship, productivity tools, and growth-mindset training during their formative high school years.",
     primaryButtonText: "Sponsor a Teen",
     primaryButtonAction: "volunteer",
     secondaryButtonText: "Our Philosophy",
     secondaryButtonAction: "about",
     enabled: true,
-    order: 4,
+    order: 5,
     duration: 8,
     overlayOpacity: 35,
     showEventCard: false
@@ -283,7 +302,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     id: "slide-5",
     imageUrl: "classroom",
     caption: "Monthly Leadership Seminars",
-    badge: "EXECUTIVE CAPACITY & EQ",
+    badge: "WHAT WE DO • MONTHLY LEADERSHIP SEMINARS",
     headline: "Lead with Purpose, Character & Competence",
     description: "Deep-dive cognitive mastery sessions and corporate stamina workshops for undergraduates, young professionals, and corporate leaders aiming for maximum operational efficiency.",
     primaryButtonText: "Attend Next Seminar",
@@ -291,7 +310,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     secondaryButtonText: "Watch Free Previews",
     secondaryButtonAction: "courses",
     enabled: true,
-    order: 5,
+    order: 6,
     duration: 8,
     overlayOpacity: 35,
     showEventCard: false
@@ -300,7 +319,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     id: "slide-6",
     imageUrl: "conference",
     caption: "G3 Series (God Growth Goals)",
-    badge: "ANNUAL DECEMBER CAMPAIGN",
+    badge: "WHAT WE DO • ANNUAL DECEMBER CAMPAIGN",
     headline: "Align Your Spirit, Skills, and Goals",
     description: "Our premier 5-weekend year-end mastermind cohort running throughout December. Consolidate your spiritual grounding, design your 12-month goals tracker, and find your lifetime accountability circle.",
     primaryButtonText: "Apply for Fellowship",
@@ -308,7 +327,7 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     secondaryButtonText: "View Gallery",
     secondaryButtonAction: "gallery",
     enabled: true,
-    order: 6,
+    order: 7,
     duration: 8,
     overlayOpacity: 40,
     showEventCard: true,
@@ -318,6 +337,40 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     eventCardLocation: "RMA Chapters & Zoom"
   }
 ];
+
+export function normalizeHeroSlides(slides?: HeroSlide[]): HeroSlide[] {
+  if (!slides || !Array.isArray(slides) || slides.length === 0) {
+    return DEFAULT_SLIDES;
+  }
+
+  const hasIntroSlide = slides.some(
+    (s) =>
+      s.id === "slide-rma-intro" ||
+      (s.badge && s.badge.toUpperCase().includes("WELCOME TO RIGHT-MINDS AFRICA")) ||
+      (s.headline && s.headline.toLowerCase().includes("think right, live right"))
+  );
+
+  let ordered: HeroSlide[];
+  if (hasIntroSlide) {
+    const intro =
+      slides.find(
+        (s) =>
+          s.id === "slide-rma-intro" ||
+          (s.badge && s.badge.toUpperCase().includes("WELCOME TO RIGHT-MINDS AFRICA")) ||
+          (s.headline && s.headline.toLowerCase().includes("think right, live right"))
+      ) || RMA_INTRO_SLIDE;
+    const rest = slides.filter((s) => s !== intro);
+    ordered = [{ ...RMA_INTRO_SLIDE, ...intro, enabled: true, order: 1 }, ...rest];
+  } else {
+    ordered = [RMA_INTRO_SLIDE, ...slides];
+  }
+
+  return ordered.map((s, idx) => ({
+    ...s,
+    order: idx + 1
+  }));
+}
+
 
 export const DEFAULT_CMS: CMSConfig = {
   id: "cms-primary",
@@ -473,7 +526,7 @@ export function getCMSConfig(): CMSConfig {
         return { 
           ...DEFAULT_CMS, 
           ...parsed,
-          heroSlides: parsed.heroSlides && parsed.heroSlides.length > 0 ? parsed.heroSlides : DEFAULT_CMS.heroSlides,
+          heroSlides: normalizeHeroSlides(parsed.heroSlides),
           testimonials: parsed.testimonials && parsed.testimonials.length > 0 ? parsed.testimonials : DEFAULT_CMS.testimonials,
           faqs: parsed.faqs && parsed.faqs.length > 0 ? parsed.faqs : DEFAULT_CMS.faqs
         };
