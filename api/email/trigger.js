@@ -1,29 +1,54 @@
+import { Resend } from "resend";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+
+const FIREBASE_CONFIG = {
+  projectId: "rightmind-african-hub",
+  appId: "1:773127969332:web:0234cc96f67ecdcd678861",
+  apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyBpRxsFugEu8RwO1PV7AkOPq_xfz8qgc9U",
+  authDomain: "rightmind-african-hub.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-e4b5d071-b5f6-4b34-8c74-ef5cd4aa6c65",
+  storageBucket: "rightmind-african-hub.firebasestorage.app",
+  messagingSenderId: "773127969332"
+};
+
+let cachedDb = null;
+function getServerFirestore() {
+  if (cachedDb) return cachedDb;
+  try {
+    const app = getApps().length === 0 ? initializeApp(FIREBASE_CONFIG) : getApp();
+    cachedDb = initializeFirestore(
+      app,
+      { ignoreUndefinedProperties: true },
+      FIREBASE_CONFIG.firestoreDatabaseId
+    );
+    return cachedDb;
+  } catch {
+    return null;
+  }
+}
+
+async function saveEmailLog(db, logId, data) {
+  if (!db) return;
+  try {
+    await setDoc(doc(db, "email_logs", logId), data, { merge: true });
+  } catch {}
+}
+
+function parseTemplate(template, data) {
+  let parsed = String(template || "");
+  for (const key of Object.keys(data || {})) {
+    const regex = new RegExp(`{{\\s*${key}\\s*}}`, "g");
+    parsed = parsed.replace(regex, data[key] ?? "");
+  }
+  return parsed;
+}
+
 async function sendEmailViaResend(to, subject, textBody, senderOpts) {
   const apiKey = process.env.RESEND_API_KEY;
   const senderEmail = process.env.SENDER_EMAIL || "onboarding@resend.dev";
   const fromNameAndEmail = `"${senderOpts.senderName}" <${senderEmail}>`;
-
-  let finalTo = to;
-  let finalSubject = subject;
-  let finalTextBody = textBody;
-  let redirectBanner = "";
-
-  const isSandboxEmail = senderEmail === "onboarding@resend.dev";
-  const isSelf = (to || "").toLowerCase().trim() === "olosundelouis@gmail.com";
-  let isRedirected = false;
-
-  if (isSandboxEmail && !isSelf && apiKey) {
-    finalTo = "olosundelouis@gmail.com";
-    finalSubject = `[Sandbox Redirect for ${to}] ${subject}`;
-    finalTextBody = `[SANDBOX TRIAL REDIRECT] Originally destined for <${to}>, but forwarded due to Resend trial limits.\n\n${textBody}`;
-    isRedirected = true;
-    redirectBanner = `
-      <div style="background-color: #FEF3C7; border: 1px solid #D97706; padding: 12px; margin-bottom: 20px; border-radius: 8px; font-size: 11px; color: #92400E; line-height: 1.4; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-        <strong>SANDBOX RESEND REDIRECT</strong><br/>
-        This official template was originally addressed to <code>${to}</code>. It was redirected to your verified account <code>olosundelouis@gmail.com</code> because the <code>onboarding@resend.dev</code> trial sender is in use.
-      </div>
-    `;
-  }
+  const fallbackFrom = `"${senderOpts.senderName}" <onboarding@resend.dev>`;
 
   const buildHtmlBody = (banner, bodyText) => `
     <!DOCTYPE html>
@@ -71,12 +96,32 @@ async function sendEmailViaResend(to, subject, textBody, senderOpts) {
                     </div>
                   `;
                 }
+                if (trimmed.startsWith("Join WhatsApp Community: ")) {
+                  const url = trimmed.replace("Join WhatsApp Community: ", "").trim();
+                  return `
+                    <div style="text-align: center; margin: 28px 0;">
+                      <a href="${url}" target="_blank" rel="noopener noreferrer" style="background-color: #25D366; color: #FFFFFF; padding: 14px 28px; font-size: 14px; font-weight: 800; text-decoration: none; border-radius: 12px; display: inline-block; text-transform: uppercase; letter-spacing: 0.05em; box-shadow: 0 4px 10px rgba(37,211,102,0.25);">Join Official WhatsApp Community &rarr;</a>
+                    </div>
+                  `;
+                }
+                if (trimmed.startsWith("WhatsApp Support Link: ")) {
+                  const url = trimmed.replace("WhatsApp Support Link: ", "").trim();
+                  return `
+                    <div style="text-align: center; margin: 20px 0;">
+                      <a href="${url}" target="_blank" rel="noopener noreferrer" style="background-color: #103D2E; color: #FCD34D; padding: 12px 24px; font-size: 13px; font-weight: 800; text-decoration: none; border-radius: 12px; display: inline-block; text-transform: uppercase; letter-spacing: 0.05em; border: 1px solid #25D366;">Chat on WhatsApp Support for Queries &rarr;</a>
+                    </div>
+                  `;
+                }
                 if (trimmed.startsWith("* ") && trimmed.includes(":")) {
                   const [k, ...rest] = trimmed.slice(2).split(":");
                   const val = rest.join(":").trim();
+                  const renderedVal =
+                    val.startsWith("http://") || val.startsWith("https://")
+                      ? `<a href="${val}" target="_blank" rel="noopener noreferrer" style="color: #0D9488; text-decoration: underline; word-break: break-all;">${val}</a>`
+                      : val;
                   return `
                     <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; font-size: 13px;">
-                      <strong style="color: #103D2E;">${k}:</strong> <span style="font-family: monospace; font-weight: 700; color: #0F172A;">${val}</span>
+                      <strong style="color: #103D2E;">${k}:</strong> <span style="font-family: monospace; font-weight: 700; color: #0F172A;">${renderedVal}</span>
                     </div>
                   `;
                 }
@@ -96,65 +141,84 @@ async function sendEmailViaResend(to, subject, textBody, senderOpts) {
   if (!apiKey) {
     return {
       success: true,
+      simulated: true,
       messageId: `SIM-${Date.now()}-${Math.floor(Math.random() * 1000)}`
     };
   }
 
+  const resend = new Resend(apiKey);
+
   try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        from: fromNameAndEmail,
-        to: [finalTo],
-        subject: finalSubject,
-        html: buildHtmlBody(redirectBanner, finalTextBody),
-        reply_to: senderOpts.replyTo
-      })
+    // Stage 1: Attempt direct primary delivery to the actual recipient
+    const { data, error } = await resend.emails.send({
+      from: fromNameAndEmail,
+      to: [to],
+      subject,
+      html: buildHtmlBody("", textBody),
+      text: textBody,
+      replyTo: senderOpts.replyTo
     });
 
-    const resData = await response.json();
-    if (!response.ok) {
-      throw new Error(resData.message || JSON.stringify(resData));
+    if (error) {
+      throw new Error(error.message || JSON.stringify(error));
     }
-    return { success: true, messageId: resData.id };
+    return { success: true, simulated: false, messageId: data?.id };
   } catch (err) {
-    const errMsg = err?.message || String(err);
-    if (errMsg.includes("You can only send testing emails") && !isRedirected) {
-      const retryTo = "olosundelouis@gmail.com";
+    let errMsg = err?.message || String(err);
+
+    // Stage 2: If custom SENDER_EMAIL domain is not yet verified in Resend DNS, retry to actual recipient with onboarding@resend.dev
+    if (senderEmail !== "onboarding@resend.dev" && (errMsg.toLowerCase().includes("not verified") || errMsg.toLowerCase().includes("domain"))) {
+      try {
+        const { data: stage2Data, error: stage2Err } = await resend.emails.send({
+          from: fallbackFrom,
+          to: [to],
+          subject,
+          html: buildHtmlBody("", textBody),
+          text: textBody,
+          replyTo: senderOpts.replyTo
+        });
+        if (!stage2Err && stage2Data?.id) {
+          return { success: true, simulated: false, messageId: stage2Data.id };
+        }
+        if (stage2Err) {
+          errMsg = stage2Err.message || JSON.stringify(stage2Err);
+        }
+      } catch (s2Catch) {
+        errMsg = s2Catch?.message || errMsg;
+      }
+    }
+
+    // Stage 3: If Resend is in sandbox/trial mode (only sends to Resend account owner), extract owner email & relay
+    if (
+      errMsg.includes("You can only send testing emails") ||
+      errMsg.toLowerCase().includes("not verified") ||
+      errMsg.toLowerCase().includes("testing emails")
+    ) {
+      const ownerMatch = errMsg.match(/\(([^)]+@[^)]+)\)/);
+      const retryTo = ownerMatch && ownerMatch[1] ? ownerMatch[1].trim() : "olosundelouis@gmail.com";
       const retrySubject = `[Sandbox Redirect for ${to}] ${subject}`;
-      const retryText = `[SANDBOX TRIAL REDIRECT] Originally destined for <${to}>, but forwarded due to Resend trial limits.\n\n${textBody}`;
+      const retryText = `[SANDBOX TRIAL REDIRECT] Originally destined for <${to}>, forwarded due to Resend sandbox mode.\n\n${textBody}`;
       const retryBanner = `
         <div style="background-color: #FEF3C7; border: 1px solid #D97706; padding: 12px; margin-bottom: 20px; border-radius: 8px; font-size: 11px; color: #92400E;">
           <strong>SANDBOX RESEND REDIRECT</strong><br/>
-          This email was destined for <code>${to}</code> but was redirected to <code>olosundelouis@gmail.com</code> due to Resend trial limits.
+          This official confirmation email was addressed to <code>${to}</code>. It was routed to your verified Resend account <code>${retryTo}</code> because Resend is currently in sandbox mode (<code>onboarding@resend.dev</code>). Once your custom domain is verified in Resend and set in <code>SENDER_EMAIL</code>, emails go directly to every applicant without this banner.
         </div>
       `;
       try {
-        const fallbackResponse = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            from: fromNameAndEmail,
-            to: [retryTo],
-            subject: retrySubject,
-            html: buildHtmlBody(retryBanner, retryText),
-            reply_to: senderOpts.replyTo
-          })
+        const { data: fallbackData, error: fallbackError } = await resend.emails.send({
+          from: fallbackFrom,
+          to: [retryTo],
+          subject: retrySubject,
+          html: buildHtmlBody(retryBanner, retryText),
+          text: retryText,
+          replyTo: senderOpts.replyTo
         });
-        const fallbackResData = await fallbackResponse.json();
-        if (fallbackResponse.ok) {
-          return { success: true, messageId: fallbackResData.id };
+        if (!fallbackError && fallbackData?.id) {
+          return { success: true, simulated: false, messageId: fallbackData.id, sandboxRedirectTo: retryTo };
         }
       } catch {}
     }
-    return { success: false, error: errMsg };
+    return { success: false, simulated: false, error: errMsg };
   }
 }
 
@@ -173,16 +237,65 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const { event, payload } = body;
+    const event = body.event || body.type;
+    const payload = body.payload || body.record || body;
     if (!event) {
       return res.status(400).json({ error: "Missing action event marker." });
     }
 
+    const db = getServerFirestore();
+    let remoteSettings = null;
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, "settings", "email_settings"));
+        if (snap.exists()) remoteSettings = snap.data();
+      } catch {}
+    }
+
     const senderOpts = {
-      senderName: "Right Minds Africa",
-      replyTo: "info@rightmindsafrica.org",
-      notificationEmail: "olosundelouis@gmail.com"
+      senderName: remoteSettings?.senderName || "Right Minds Africa",
+      replyTo: remoteSettings?.replyTo || "info@rightmindsafrica.org",
+      notificationEmail: remoteSettings?.notificationEmail || "olosundelouis@gmail.com"
     };
+
+    const submissionDate = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    });
+
+    if (event === "TEST_EMAIL_DISPATCH") {
+      const targetEmail = (payload?.email || senderOpts.notificationEmail || "olosundelouis@gmail.com").trim();
+      const whatsappUrl = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
+      const subject = "Diagnostic Test – Right-Minds Africa Hub Auto Email API";
+      const textBody = `Dear Administrator,\n\nThis is a live diagnostic test from your Right-Minds Africa Hub Automated Email API.\n\nDiagnostic Details:\n* Target Recipient: ${targetEmail}\n* Outbound Sender Name: ${senderOpts.senderName}\n* Configured SENDER_EMAIL: ${process.env.SENDER_EMAIL || "onboarding@resend.dev"}\n* Resend API Key Configured: ${process.env.RESEND_API_KEY ? "YES (Live Resend Mode)" : "NO (Simulation Mode)"}\n* Internship WhatsApp Link: ${whatsappUrl}\n* Timestamp: ${new Date().toISOString()}\n\nJoin WhatsApp Community: ${whatsappUrl}\n\nYour automated email dispatch pipeline is operational!\n\nWarm regards,\nRight-Minds Africa Hub Systems`;
+
+      const mailRes = await sendEmailViaResend(targetEmail, subject, textBody, senderOpts);
+      const logEntry = await logEmailTransaction(db, {
+        recipient: targetEmail,
+        subject,
+        body: textBody,
+        registrationId: `TEST-${Date.now().toString().slice(-6)}`,
+        programType: "volunteer",
+        status: mailRes.success ? "success" : "failed",
+        deliveryResult: mailRes.success
+          ? `Diagnostic test delivered: ref=${mailRes.messageId}${mailRes.simulated ? " (Simulation Mode - Set RESEND_API_KEY in env for live inbox delivery)" : ""}${mailRes.sandboxRedirectTo ? ` (Relayed via Resend sandbox owner ${mailRes.sandboxRedirectTo})` : ""}`
+          : `Diagnostic test failed: ${mailRes.error}`
+      });
+
+      return res.status(200).json({
+        success: mailRes.success,
+        status: mailRes.success ? "success" : "failed",
+        simulated: !!mailRes.simulated,
+        hasResendKey: !!process.env.RESEND_API_KEY,
+        senderEmail: process.env.SENDER_EMAIL || "onboarding@resend.dev",
+        sandboxRedirectTo: mailRes.sandboxRedirectTo || null,
+        messageId: mailRes.messageId || null,
+        logId: logEntry.id,
+        logEntry,
+        error: mailRes.error || null
+      });
+    }
 
     if (event === "ADMIN_CREATED") {
       const adminEmail = (payload?.email || "").trim().toLowerCase();
@@ -239,6 +352,22 @@ System Owner (Super Admin)
 Right Minds Africa & Corper Impact Initiative`;
 
       const dispatch = await sendEmailViaResend(adminEmail, subject, emailBody, senderOpts);
+      const logId = payload?.logId || `mail-admin-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      await saveEmailLog(db, logId, {
+        id: logId,
+        recipient: adminEmail,
+        subject,
+        body: emailBody,
+        registrationId: `ADM-${Date.now().toString().slice(-5)}`,
+        programType: "Admin Credentials",
+        status: dispatch.success ? "success" : "failed",
+        timestamp: new Date().toISOString(),
+        sentTime: new Date().toISOString(),
+        deliveryResult: dispatch.success
+          ? `Admin login credentials delivered: ref=${dispatch.messageId}`
+          : `Failure: ${dispatch.error}`
+      });
+
       return res.status(200).json({
         success: dispatch.success,
         messageId: dispatch.messageId,
@@ -256,20 +385,250 @@ Right Minds Africa & Corper Impact Initiative`;
       const firstName = applicantName.split(" ")[0];
       const emailBody = `Hello ${firstName},\n\nWelcome to Right Minds Africa.\n\nTo complete your account setup, please verify your email address by clicking the button below.\n\nVerify Email: ${verificationLink}\n\nIf you did not create this account, you can safely ignore this email.\n\nThank you,\n\nRight Minds Africa Team`;
       const dispatch = await sendEmailViaResend(applicantEmail, subject, emailBody, senderOpts);
+      await saveEmailLog(db, `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`, {
+        recipient: applicantEmail,
+        subject,
+        body: emailBody,
+        registrationId: "EMAIL-VERIFY",
+        programType: "Email Verification",
+        status: dispatch.success ? "success" : "failed",
+        sentTime: new Date().toISOString(),
+        deliveryResult: dispatch.success ? `Verification link sent: msgRef=${dispatch.messageId}` : `Failure: ${dispatch.error}`
+      });
       return res.status(200).json({ success: dispatch.success });
     }
 
-    if (event === "REGISTRATION_CREATED") {
+    if (event === "EMAIL_VERIFICATION_SUCCESS") {
+      const applicantName = payload?.fullName || "User";
       const applicantEmail = payload?.email;
-      const applicantName = payload?.fullName || payload?.applicantName || "Applicant";
-      const refNumber = payload?.referenceNumber || payload?.registrationId || "PENDING";
-      const pName = payload?.programName || "Right Minds Africa Program";
-      if (!applicantEmail) return res.status(400).json({ error: "Missing applicant email." });
+      if (!applicantEmail) return res.status(400).json({ error: "Missing verification email." });
 
-      const subject = `Registration Confirmed – ${pName}`;
-      const emailBody = `Dear ${applicantName},\n\nThank you for registering for ${pName}.\n\n* Full Name: ${applicantName}\n* Registration ID: ${refNumber}\n* Program: ${pName}\n\nRegards,\nRight Minds Africa & Corper Impact Initiative`;
+      const subject = "Welcome to Right Minds Africa – Account Verified!";
+      const firstName = applicantName.split(" ")[0];
+      const emailBody = `Hello ${firstName},\n\nCongratulations! Your email address has been successfully verified.\n\nWelcome to the Right Minds Africa portal. Your student account is now fully unlocked and you have been granted comprehensive access to our training programs, premium courses, and protected communities.\n\nMain Portal Link: https://rightmindsafrica.org/\n\nThank you,\n\nRight Minds Africa Team`;
       const dispatch = await sendEmailViaResend(applicantEmail, subject, emailBody, senderOpts);
       return res.status(200).json({ success: dispatch.success });
+    }
+
+    if (event === "PAYMENT_SUBMITTED") {
+      const applicantName = payload?.fullName || payload?.studentName || "Applicant";
+      const applicantEmail = payload?.email || payload?.userEmail;
+      const refNumber = payload?.referenceNumber || "PENDING";
+      const payRef = payload?.paymentReference || "N/A";
+      const amt = payload?.amount || "FREE";
+      const pName = payload?.programName || "Program Placement";
+      if (!applicantEmail) return res.status(400).json({ error: "Missing recipient mapping." });
+
+      const paySubject = `Payment Verification Pending – ${pName}`;
+      const payBody = `Dear ${applicantName},\n\nWe have received your payment submission for ${pName}.\n\nOur administration team is currently auditing your deposit against your reference (${payRef}).\n\nDetails:\n* Registration ID: ${refNumber}\n* Amount: ${amt}\n* Timestamp: ${submissionDate}\n\nYou will receive a confirmation email once verified.\n\nRegards,\nRight Minds Africa`;
+      const dispatch = await sendEmailViaResend(applicantEmail, paySubject, payBody, senderOpts);
+      await saveEmailLog(db, `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`, {
+        recipient: applicantEmail,
+        subject: paySubject,
+        body: payBody,
+        registrationId: refNumber,
+        programType: "Payment Submitted",
+        status: dispatch.success ? "success" : "failed",
+        sentTime: new Date().toISOString(),
+        deliveryResult: dispatch.success ? "Delivered successfully" : `Failure: ${dispatch.error}`
+      });
+      return res.status(200).json({ success: dispatch.success });
+    }
+
+    if (event === "PAYMENT_APPROVED" || event === "PAYMENT_REJECTED") {
+      const applicantName = payload?.fullName || "Applicant";
+      const applicantEmail = payload?.email;
+      const refNumber = payload?.referenceNumber || "PENDING";
+      const payRef = payload?.paymentReference || "N/A";
+      const isCii = payload?.profileType?.startsWith("cii") || payload?.profileType === "cii";
+      const pName = isCii ? "Corper Impact Initiative (CII)" : "Right Minds Africa (RMA) Mentorship";
+      const rmks = payload?.notes || "None";
+      if (!applicantEmail) return res.status(400).json({ error: "Missing recipient mapping." });
+
+      const isApproved = event === "PAYMENT_APPROVED";
+      const paySubject = isApproved
+        ? `Payment Verified & Placement Unlocked! – ${pName}`
+        : `Payment Review Action Required – ${pName}`;
+      const payBody = isApproved
+        ? `Dear ${applicantName},\n\nCongratulations! Your payment has been successfully verified for ${pName}.\n\nYour placement has been unlocked. Welcome to the cohort!\n\nDetails:\n* Registration ID: ${refNumber}\n* Payment Reference: ${payRef}\n* Status: Active / Approved\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nRight Minds Africa`
+        : `Dear ${applicantName},\n\nWe were unable to verify your payment for ${pName}.\n\nAudit Remarks:\n${rmks}\n\nDetails:\n* Registration ID: ${refNumber}\n* Payment Reference: ${payRef}\n\nPlease re-check your payment reference or re-upload your receipt screenshot in your portal.\n\nRegards,\nRight Minds Africa Team`;
+
+      const dispatch = await sendEmailViaResend(applicantEmail, paySubject, payBody, senderOpts);
+      await saveEmailLog(db, `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`, {
+        recipient: applicantEmail,
+        subject: paySubject,
+        body: payBody,
+        registrationId: refNumber,
+        programType: isApproved ? "Payment Approved" : "Payment Rejected",
+        status: dispatch.success ? "success" : "failed",
+        sentTime: new Date().toISOString(),
+        deliveryResult: dispatch.success ? "Delivered successfully" : `Failure: ${dispatch.error}`
+      });
+      return res.status(200).json({ success: dispatch.success });
+    }
+
+    if (event === "COURSE_ENROLLED") {
+      const sName = payload?.studentName || payload?.studentEmail || "Student";
+      const sEmail = payload?.studentEmail;
+      const cTitle = payload?.courseTitle || "Premium Growth Course";
+      const payRef = payload?.payment?.paymentReference || payload?.paymentReference || "N/A";
+      if (!sEmail) return res.status(400).json({ error: "Missing student email mapping." });
+
+      const courseSubject = `Course Enrollment Confirmation - ${cTitle}`;
+      const courseBody = `Dear ${sName},\n\nYou have been successfully enrolled in ${cTitle}!\n\nHere are your transaction details:\n* Course Name: ${cTitle}\n* Payment Reference: ${payRef}\n* Student Email: ${sEmail}\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nRight Minds Africa LMS`;
+      const dispatch = await sendEmailViaResend(sEmail, courseSubject, courseBody, senderOpts);
+      await saveEmailLog(db, `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`, {
+        recipient: sEmail,
+        subject: courseSubject,
+        body: courseBody,
+        registrationId: payRef,
+        programType: "Course Enrollment",
+        status: dispatch.success ? "success" : "failed",
+        sentTime: new Date().toISOString(),
+        deliveryResult: dispatch.success ? `Course Welcome Delivered: ref=${dispatch.messageId}` : `Failure: ${dispatch.error}`
+      });
+      return res.status(200).json({ success: dispatch.success, message: "Course confirmation welcome dispatched." });
+    }
+
+    if (event === "OFFLINE_CHAT_MESSAGE") {
+      const { visitorName, visitorEmail, visitorPhone, messageText, adminEmail } = payload || {};
+      if (!visitorEmail) return res.status(400).json({ error: "Missing visitor email." });
+
+      const visitorSubject = "We've Received Your Message – Right Minds Support";
+      const visitorBody = `Hello ${visitorName || "Visitor"},\n\nThank you for reaching out to Right Minds Africa & Corper Impact Initiative support.\n\nWe have received your message:\n"${messageText || ""}"\n\nAn administrator has been notified and will respond shortly.\n\nBest regards,\nRight Minds Africa Support Team`;
+      const visitorDispatch = await sendEmailViaResend(visitorEmail, visitorSubject, visitorBody, senderOpts);
+
+      const targetAdminEmail = adminEmail || senderOpts.notificationEmail || "info@rightmindsafrica.org";
+      const adminSubject = `[Live Chat Alert] New Offline Message from ${visitorName || visitorEmail}`;
+      const adminBody = `Hello Admin,\n\nA visitor has left a support message on Live Chat.\n\n* Name: ${visitorName || "N/A"}\n* Email: ${visitorEmail}\n* Phone: ${visitorPhone || "Not provided"}\n\nMessage:\n"${messageText || ""}"`;
+      sendEmailViaResend(targetAdminEmail, adminSubject, adminBody, senderOpts).catch(() => null);
+
+      return res.status(200).json({ success: visitorDispatch.success, message: "Offline chat notifications dispatched." });
+    }
+
+    if (event === "REGISTRATION_CREATED" || event === "VOLUNTEER_APPLICATION_SUBMITTED") {
+      const applicantEmail = (payload?.email || "").trim();
+      const applicantName = payload?.fullName || payload?.applicantName || "Applicant";
+      const refNumber = payload?.referenceNumber || payload?.registrationId || payload?.id || `VOL-${Date.now().toString().slice(-6)}`;
+      const rawProg = (payload?.programType || payload?.profileType || "").toLowerCase();
+      const isVolunteerOrIntern =
+        event === "VOLUNTEER_APPLICATION_SUBMITTED" ||
+        rawProg.includes("volunteer") ||
+        rawProg.includes("intern") ||
+        (payload?.programName || "").toLowerCase().includes("intern") ||
+        (payload?.programName || "").toLowerCase().includes("volunteer");
+
+      const pName =
+        payload?.programName ||
+        (isVolunteerOrIntern
+          ? "Right-Minds Africa Hub Internship & Volunteer Application"
+          : "Right Minds Africa Program");
+
+      if (!applicantEmail) {
+        return res.status(400).json({ error: "Missing applicant email." });
+      }
+
+      const whatsappUrl =
+        payload?.whatsappLink ||
+        (rawProg.startsWith("cii")
+          ? "https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI"
+          : isVolunteerOrIntern
+          ? "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2"
+          : "https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC");
+
+      const whatsappSupportUrl =
+        payload?.whatsappSupportLink ||
+        whatsappUrl;
+
+      const roleOrDept =
+        payload?.department ||
+        payload?.primaryRole ||
+        payload?.volunteerTrack ||
+        "Internship & Volunteer Team";
+
+      const subject = isVolunteerOrIntern
+        ? "Thank You for Applying – Right-Minds Africa Hub Internship & Volunteer Team"
+        : `Registration Confirmed – ${pName}`;
+
+      const emailBody = isVolunteerOrIntern
+        ? `Dear ${applicantName},
+
+Thank you for your interest in joining the Right-Minds Africa Hub Internship & Volunteer Team! We are thrilled to receive your application and deeply appreciate your willingness to contribute your skills toward shaping a generation across Africa.
+
+Your application has been successfully received and logged for review. Here is a summary of your submission:
+
+* Applicant Name: ${applicantName}
+* Application Reference ID: ${refNumber}
+* Primary Role / Department: ${roleOrDept}
+* Location: ${payload?.location || "N/A"}
+* Submission Date: ${submissionDate}
+* Direct WhatsApp Support & Community Link: ${whatsappSupportUrl}
+
+Join WhatsApp Community: ${whatsappUrl}
+
+WhatsApp Support Link: ${whatsappSupportUrl}
+
+What Happens Next & Direct Support for Queries:
+1. Click the green button or WhatsApp link above (${whatsappUrl}) to join our official WhatsApp community immediately for onboarding updates, orientation schedules, and direct support for any queries you may have.
+2. Our coordinating team will review your application details and 60-second introduction video.
+3. Shortlisted candidates will be contacted via email and WhatsApp regarding the next steps in the onboarding process.
+
+Have Questions or Need Assistance?
+Reach our coordinating team directly on WhatsApp for any queries via ${whatsappSupportUrl} or reply to this email at info@rightmindsafrica.org.
+
+Warm regards,
+Right-Minds Africa Hub & Corper Impact Initiative Team`
+        : `Dear ${applicantName},
+
+Thank you for registering for ${pName}.
+
+We have successfully received your registration details:
+
+* Full Name: ${applicantName}
+* Registration ID: ${refNumber}
+* Program: ${pName}
+* Submission Date: ${submissionDate}
+* Official WhatsApp Link: ${whatsappUrl}
+
+Join WhatsApp Community: ${whatsappUrl}
+
+While our team reviews your registration, please click the button or link above to join our official WhatsApp community for announcements, mentorship resources, and cohort updates.
+
+Regards,
+Right Minds Africa & Corper Impact Initiative`;
+
+      const dispatch = await sendEmailViaResend(applicantEmail, subject, emailBody, senderOpts);
+
+      const logId = `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      await saveEmailLog(db, logId, {
+        id: logId,
+        registrationId: refNumber,
+        programType: isVolunteerOrIntern ? "volunteer" : (rawProg || "cii"),
+        recipient: applicantEmail,
+        subject,
+        body: emailBody,
+        status: dispatch.success ? "success" : "failed",
+        timestamp: new Date().toISOString(),
+        sentTime: new Date().toISOString(),
+        deliveryResult: dispatch.success ? `Delivered: Reference=${dispatch.messageId}` : `Error: ${dispatch.error}`
+      });
+
+      // Also notify the Super Admin / Operations inbox asynchronously
+      const adminAlertBody = `A new ${pName} submission has been received.\n\n* Applicant Name: ${applicantName}\n* Email Address: ${applicantEmail}\n* Phone Number: ${payload?.phone || "N/A"}\n* Role / Program: ${roleOrDept}\n* Reference ID: ${refNumber}\n* Submission Date: ${submissionDate}\n\nYou can view and manage this application in the Admin Portal.`;
+      sendEmailViaResend(
+        senderOpts.notificationEmail,
+        `New Application Received – ${applicantName} (${pName})`,
+        adminAlertBody,
+        senderOpts
+      ).catch(() => null);
+
+      return res.status(200).json({
+        success: dispatch.success,
+        simulated: !!dispatch.simulated,
+        messageId: dispatch.messageId,
+        whatsappLink: whatsappUrl,
+        whatsappSupportLink: whatsappSupportUrl
+      });
     }
 
     return res.status(200).json({ success: true, message: `Processed event ${event}` });

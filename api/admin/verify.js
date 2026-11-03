@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
 const ADMIN_TOKEN_SECRET =
+  process.env.ADMIN_SESSION_SECRET ||
   process.env.ADMIN_TOKEN_SECRET ||
   crypto.createHash("sha256").update("rma-hub-sovereign-hmac-key-2026").digest("hex");
 
@@ -27,6 +28,8 @@ function verifyAdminSessionToken(token) {
       valid: true,
       email: decoded.email,
       role: decoded.role,
+      allowedTabs: decoded.allowedTabs,
+      canWrite: decoded.canWrite,
       expiresAt: decoded.expiresAt
     };
   } catch {
@@ -56,10 +59,14 @@ export default async function handler(req, res) {
     valid: true,
     email: result.email,
     role: result.role,
+    allowedTabs: result.allowedTabs,
+    canWrite: result.canWrite,
     expiresAt: result.expiresAt,
     user: {
       username: result.email,
       role: result.role,
+      allowedTabs: result.allowedTabs,
+      canWrite: result.canWrite,
       expiresAt: result.expiresAt
     }
   });

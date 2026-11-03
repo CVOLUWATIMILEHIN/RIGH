@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Sparkles, CheckCircle2, ArrowRight, Clock, MapPin, 
   Video, Phone, Mail, FileText, ShieldCheck, AlertCircle, 
   Loader2, HelpCircle, ExternalLink, Briefcase, Users, 
   Palette, Share2, HeartHandshake, Info, Check, ChevronDown,
-  FileSpreadsheet, Settings, RefreshCw, Globe, Maximize2, Minimize2, Download, Copy
+  FileSpreadsheet, Settings, RefreshCw, Globe, Maximize2, Minimize2, Download, Copy, MessageCircle
 } from "lucide-react";
 import { saveRegistration, savePortalApplication, getPortalApplications, getFirestoreDb } from "../../lib/db";
 
@@ -72,6 +72,8 @@ export const SKILL_OPTIONS = [
 
 // Default Google Form URL configured for Right-Minds Africa Hub Volunteer Applications
 const DEFAULT_GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScq8FZgaFF_hYxLbKk0eLjLwuMW1iYRPjZpYfMljdQ3k_oCHQ/viewform?embedded=true";
+const DEFAULT_WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
+const LEGACY_WHATSAPP_FALLBACK_URL = "https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC";
 const CONNECTED_GOOGLE_EMAIL = "olosundelouis@gmail.com";
 
 export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplicationPageProps) {
@@ -97,7 +99,20 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     return DEFAULT_GOOGLE_FORM_URL;
   });
 
+  // Official WhatsApp Community URL (configurable via Admin Backend)
+  const [whatsappGroupUrl, setWhatsappGroupUrl] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("rma_volunteer_whatsapp_url");
+      if (saved && saved.startsWith("http") && saved !== LEGACY_WHATSAPP_FALLBACK_URL) {
+        return saved;
+      }
+    }
+    return DEFAULT_WHATSAPP_GROUP_URL;
+  });
+
   const [isIframeLoading, setIsIframeLoading] = useState(true);
+  const iframeLoadCount = useRef(0);
+  const [googleFormSubmitted, setGoogleFormSubmitted] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [customUrlInput, setCustomUrlInput] = useState(googleFormUrl);
   const [configSuccess, setConfigSuccess] = useState(false);
@@ -142,6 +157,17 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
   // Fullscreen Google Form modal state (gives 100vw x 100vh unobstructed Google Form view)
   const [isFullScreenIframe, setIsFullScreenIframe] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedWhatsapp, setCopiedWhatsapp] = useState(false);
+  const [resendingEmail, setResendingEmail] = useState(false);
+  const [emailResent, setEmailResent] = useState(false);
+
+  // Quick Confirmation Email & WhatsApp Dispatch state for embedded Google Form applicants
+  const [gfName, setGfName] = useState("");
+  const [gfEmail, setGfEmail] = useState("");
+  const [gfPhone, setGfPhone] = useState("");
+  const [gfRole, setGfRole] = useState("Graphic Designer");
+  const [gfSending, setGfSending] = useState(false);
+  const [gfError, setGfError] = useState<string | null>(null);
 
   // Export submissions to Google Sheets CSV format
   const handleExportToGoogleSheets = async () => {
@@ -208,6 +234,13 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
             setGoogleFormUrl(savedUrl);
             setCustomUrlInput(savedUrl);
           }
+          const savedWhatsapp = localStorage.getItem("rma_volunteer_whatsapp_url");
+          if (savedWhatsapp && savedWhatsapp.startsWith("http") && savedWhatsapp !== LEGACY_WHATSAPP_FALLBACK_URL) {
+            setWhatsappGroupUrl(savedWhatsapp);
+          } else {
+            setWhatsappGroupUrl(DEFAULT_WHATSAPP_GROUP_URL);
+            localStorage.setItem("rma_volunteer_whatsapp_url", DEFAULT_WHATSAPP_GROUP_URL);
+          }
         }
 
         const { doc, getDoc } = await import("firebase/firestore");
@@ -229,6 +262,16 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
             const resolved = `https://docs.google.com/forms/d/${data.activeFormId}/viewform`;
             setGoogleFormUrl(resolved);
             setCustomUrlInput(resolved);
+          }
+          if (
+            data.volunteerWhatsappUrl &&
+            data.volunteerWhatsappUrl.startsWith("http") &&
+            data.volunteerWhatsappUrl !== LEGACY_WHATSAPP_FALLBACK_URL
+          ) {
+            setWhatsappGroupUrl(data.volunteerWhatsappUrl);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("rma_volunteer_whatsapp_url", data.volunteerWhatsappUrl);
+            }
           }
         }
       } catch (err) {
@@ -421,6 +464,10 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
         programType: "internship",
         programName: "Internship Application",
         department: primaryRole,
+        primaryRole,
+        contactMethod,
+        availableHours: `${availability} (${workArrangement})`,
+        whatsappLink: whatsappGroupUrl,
         notes: `[Internship Application] Primary Role: ${primaryRole}${secondaryRole ? ` | Second Choice: ${secondaryRole}` : ""} | Contact Method: ${contactMethod} | Video: ${videoUrl.trim()}`
       });
 
@@ -442,6 +489,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           availability,
           workArrangement,
           videoUrl: videoUrl.trim(),
+          whatsappLink: whatsappGroupUrl,
           confirmedAccurate: true,
           consentAgreed: true,
           submittedAt: new Date().toISOString()
@@ -474,6 +522,114 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     }
   };
 
+  const handleCopyWhatsappLink = () => {
+    if (typeof window !== "undefined") {
+      navigator.clipboard.writeText(whatsappGroupUrl);
+      setCopiedWhatsapp(true);
+      setTimeout(() => setCopiedWhatsapp(false), 2500);
+    }
+  };
+
+  const handleResendConfirmationEmail = async () => {
+    if (!submittedApp) return;
+    setResendingEmail(true);
+    setEmailResent(false);
+    try {
+      const payloadData = {
+        id: submittedApp.id,
+        referenceNumber: submittedApp.id,
+        fullName: submittedApp.fullName,
+        email: submittedApp.email,
+        programType: "internship",
+        programName: "Internship & Volunteer Application",
+        department: submittedApp.primaryRole,
+        primaryRole: submittedApp.primaryRole,
+        contactMethod: submittedApp.contactMethod,
+        whatsappLink: whatsappGroupUrl,
+        whatsappSupportLink: whatsappGroupUrl
+      };
+      await fetch("/api/email/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "VOLUNTEER_APPLICATION_SUBMITTED",
+          payload: payloadData
+        })
+      });
+      setEmailResent(true);
+      setTimeout(() => setEmailResent(false), 4000);
+    } catch (err) {
+      console.warn("Could not resend confirmation email:", err);
+    } finally {
+      setResendingEmail(false);
+    }
+  };
+
+  const handleGoogleFormQuickConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGfError(null);
+    if (!gfName.trim()) {
+      setGfError("Please enter your Full Name.");
+      return;
+    }
+    if (!gfEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(gfEmail.trim())) {
+      setGfError("Please enter a valid Email Address to receive your confirmation mail and WhatsApp link.");
+      return;
+    }
+
+    setGfSending(true);
+    try {
+      const reg = await saveRegistration({
+        fullName: gfName.trim(),
+        email: gfEmail.trim(),
+        phone: gfPhone.trim() || "Provided via Google Form",
+        location: "Nigeria",
+        profileType: "volunteer",
+        programType: "internship",
+        programName: "Internship Application",
+        department: gfRole,
+        primaryRole: gfRole,
+        contactMethod: "WhatsApp",
+        whatsappLink: whatsappGroupUrl,
+        notes: `[Google Form Internship Application] Primary Role: ${gfRole}`
+      });
+
+      const portalApp = await savePortalApplication({
+        fullName: gfName.trim(),
+        email: gfEmail.trim(),
+        phone: gfPhone.trim() || "Provided via Google Form",
+        type: "volunteer",
+        notes: `Submitted via Embedded Google Form — Role: ${gfRole}`,
+        options: {
+          primaryRole: gfRole,
+          preferredContactMethod: "WhatsApp",
+          whatsappLink: whatsappGroupUrl,
+          submittedVia: "Google Form",
+          submittedAt: new Date().toISOString()
+        }
+      });
+
+      setSubmittedApp({
+        id: portalApp?.id || reg?.id || `VOL-${Date.now().toString().slice(-6)}`,
+        fullName: gfName.trim(),
+        email: gfEmail.trim(),
+        primaryRole: gfRole,
+        contactMethod: "WhatsApp & Email",
+        submittedAt: new Date().toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "long",
+          year: "numeric"
+        })
+      });
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err: any) {
+      setGfError(err?.message || "Failed to send confirmation email. Please try again.");
+    } finally {
+      setGfSending(false);
+    }
+  };
+
   return (
     // Full screen width container: stretches across the entire viewport without being shrunk into the middle
     <div className="w-full min-h-screen px-3 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-6 sm:py-8 space-y-10 text-slate-900">
@@ -501,8 +657,98 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
             </div>
           </div>
 
-          <div className="p-5 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl text-emerald-900 text-sm sm:text-base leading-relaxed font-medium">
-            Thank you for applying for an internship with Right-Minds Africa Hub! Your application has been submitted successfully. Our team will review your information and contact you regarding the next steps.
+          <div className="p-5 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl text-emerald-900 text-sm sm:text-base leading-relaxed font-medium flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-emerald-800">
+                <Mail size={15} className="text-emerald-600" />
+                <span>Resend Confirmation Email &amp; WhatsApp Support Link Dispatched</span>
+              </div>
+              <p className="text-xs sm:text-sm text-emerald-900">
+                Thank you for your interest in Right-Minds Africa Hub! An official confirmation email thanking you for applying—complete with your reference ID (<strong>{submittedApp.id}</strong>) and a direct <strong>WhatsApp support &amp; community link for queries</strong>—has been sent to <strong>{submittedApp.email}</strong>.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleResendConfirmationEmail}
+              disabled={resendingEmail}
+              className="px-4 py-2.5 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-extrabold uppercase tracking-wider inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-all shadow-2xs"
+            >
+              {resendingEmail ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>Sending...</span>
+                </>
+              ) : emailResent ? (
+                <>
+                  <Check size={13} className="text-emerald-600" />
+                  <span>Email Sent!</span>
+                </>
+              ) : (
+                <>
+                  <Mail size={13} />
+                  <span>Resend Email</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* OFFICIAL WHATSAPP COMMUNITY INVITE CARD */}
+          <div className="p-6 sm:p-8 bg-gradient-to-br from-[#0E3A2F] via-[#12493b] to-[#0b2e25] text-white rounded-3xl shadow-lg border border-emerald-500/30 space-y-5 relative overflow-hidden">
+            <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-[#25D366]/15 rounded-full blur-2xl pointer-events-none" />
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+              <div className="space-y-2 max-w-2xl">
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-[#25D366]/20 text-emerald-300 border border-[#25D366]/40 px-3 py-1 rounded-full font-mono">
+                  <MessageCircle size={12} /> Mandatory Next Step • Official WhatsApp Community
+                </span>
+                <h3 className="text-xl sm:text-2xl font-extrabold uppercase font-display tracking-tight text-white">
+                  Join the Internship &amp; Volunteer WhatsApp Group
+                </h3>
+                <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
+                  Connect immediately with our onboarding coordinators, receive real-time orientation schedules, and meet fellow Right-Minds Africa Hub interns and volunteers in our official WhatsApp community.
+                </p>
+                <div className="pt-1 flex items-center gap-2 text-[11px] font-mono text-emerald-200/90 break-all">
+                  <span>Official Link:</span>
+                  <a
+                    href={whatsappGroupUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-amber-300 hover:text-amber-200 font-bold"
+                  >
+                    {whatsappGroupUrl}
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row md:flex-col gap-3 shrink-0">
+                <a
+                  href={whatsappGroupUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-6 py-4 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-lg hover:shadow-xl transition-all inline-flex items-center justify-center gap-2.5 cursor-pointer"
+                >
+                  <MessageCircle size={18} className="fill-slate-950" />
+                  <span>Join WhatsApp Group Now</span>
+                  <ExternalLink size={14} />
+                </a>
+                <button
+                  type="button"
+                  onClick={handleCopyWhatsappLink}
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/15 rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                >
+                  {copiedWhatsapp ? (
+                    <>
+                      <Check size={14} className="text-emerald-300" />
+                      <span>WhatsApp Link Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={14} />
+                      <span>Copy WhatsApp Link</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
@@ -529,13 +775,24 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
             <div>
               <strong className="block font-bold mb-1">What to do next:</strong>
               <p>
-                Please monitor your email address (<strong>{submittedApp.email}</strong>) and your preferred contact method ({submittedApp.contactMethod}) for updates regarding your review and onboarding scheduling.
+                1. Check your email inbox (<strong>{submittedApp.email}</strong>) for your official confirmation mail.<br />
+                2. Click the green <strong>Join WhatsApp Group Now</strong> button above (or use the link inside your confirmation email) to join our official onboarding channel.
               </p>
             </div>
           </div>
 
           <div className="pt-2 flex flex-wrap gap-4 items-center justify-between border-t border-slate-100">
             <div className="flex flex-wrap items-center gap-3">
+              <a
+                href={whatsappGroupUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-6 py-3.5 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 text-xs font-extrabold uppercase tracking-wider rounded-xl cursor-pointer transition-all inline-flex items-center gap-2 shadow-sm"
+              >
+                <MessageCircle size={15} />
+                <span>Open WhatsApp Community</span>
+                <ExternalLink size={13} />
+              </a>
               <button
                 type="button"
                 onClick={() => {
@@ -783,32 +1040,268 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
             }`}
           >
             {formMode === "google_form" ? (
-              /* Native In-Page Google Form Embed — Seamless, Flush Container, Zero Extra Padding/Headers */
-              <div className="w-full relative min-h-[5096px] bg-white overflow-x-hidden">
+              /* Native In-Page Google Form Embed + Automatic Post-Submission Email & WhatsApp Community Onboarding */
+              <div className="w-full bg-white overflow-x-hidden">
                 <div className="h-1.5 w-full bg-gradient-to-r from-[#0E3A2F] via-emerald-700 to-amber-500" />
-                {isIframeLoading && (
-                  <div className="absolute inset-x-0 top-1.5 h-96 flex flex-col items-center justify-center bg-white/95 z-10 gap-3">
-                    <Loader2 size={32} className="animate-spin text-[#0E3A2F]" />
-                    <p className="text-xs font-bold text-slate-600 uppercase tracking-wider font-mono">
-                      Loading Internship Application Form...
-                    </p>
+
+                {/* Top Quick Notice Bar so applicants know how to get their email & WhatsApp link or switch to Direct Form */}
+                <div className="px-4 sm:px-8 py-3.5 bg-[#FAF8F3] border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-slate-700 font-medium">
+                    <Mail size={15} className="text-[#0E3A2F] shrink-0" />
+                    <span>
+                      After submitting the form below, claim your <strong>Confirmation Email</strong> and join our <strong>Official WhatsApp Group</strong> in Step 2 below.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a
+                      href="#post-submission-whatsapp-email"
+                      className="px-3 py-1.5 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-extrabold text-[11px] uppercase tracking-wider rounded-lg inline-flex items-center gap-1.5 transition-all"
+                    >
+                      <MessageCircle size={13} />
+                      <span>Get Email &amp; WhatsApp Link &darr;</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setFormMode("interactive")}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-[#0E3A2F] border border-slate-200 font-bold text-[11px] uppercase tracking-wider rounded-lg cursor-pointer transition-all"
+                    >
+                      Use Direct Portal Form
+                    </button>
+                  </div>
+                </div>
+
+                {/* Auto-detected Google Form submission banner */}
+                {googleFormSubmitted && (
+                  <div className="mx-4 sm:mx-8 mt-6 p-5 bg-emerald-50 border-2 border-emerald-400 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 size={24} className="text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 font-mono block">
+                          Form Response Detected
+                        </span>
+                        <h4 className="text-base sm:text-lg font-extrabold text-slate-900">
+                          Google Form Submitted! Join WhatsApp &amp; Receive Your Confirmation Mail
+                        </h4>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          Click the green button to join our official WhatsApp community immediately, and confirm your email below to receive your official confirmation email.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                      <a
+                        href={whatsappGroupUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-5 py-3 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-2 shadow-sm"
+                      >
+                        <MessageCircle size={16} />
+                        <span>Join WhatsApp Group</span>
+                        <ExternalLink size={13} />
+                      </a>
+                      <a
+                        href="#post-submission-whatsapp-email"
+                        className="px-4 py-3 bg-[#0E3A2F] hover:bg-[#0c3127] text-white font-extrabold text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-1.5"
+                      >
+                        <Mail size={14} />
+                        <span>Get Confirmation Email</span>
+                      </a>
+                    </div>
                   </div>
                 )}
 
-                <iframe
-                  src={getEmbedUrl(googleFormUrl)}
-                  width="100%"
-                  height="5096"
-                  frameBorder="0"
-                  marginHeight={0}
-                  marginWidth={0}
-                  scrolling="no"
-                  onLoad={() => setIsIframeLoading(false)}
-                  className="block w-full min-h-[5096px] bg-white border-0 m-0 p-0 overflow-x-hidden"
-                  title="Right-Minds Africa Hub Internship Application"
+                <div className="w-full relative min-h-[5096px] bg-white overflow-x-hidden">
+                  {isIframeLoading && (
+                    <div className="absolute inset-x-0 top-1.5 h-96 flex flex-col items-center justify-center bg-white/95 z-10 gap-3">
+                      <Loader2 size={32} className="animate-spin text-[#0E3A2F]" />
+                      <p className="text-xs font-bold text-slate-600 uppercase tracking-wider font-mono">
+                        Loading Internship Application Form...
+                      </p>
+                    </div>
+                  )}
+
+                  <iframe
+                    src={getEmbedUrl(googleFormUrl)}
+                    width="100%"
+                    height="5096"
+                    frameBorder="0"
+                    marginHeight={0}
+                    marginWidth={0}
+                    scrolling="no"
+                    onLoad={() => {
+                      setIsIframeLoading(false);
+                      iframeLoadCount.current += 1;
+                      if (iframeLoadCount.current >= 2) {
+                        setGoogleFormSubmitted(true);
+                        const confirmSection = document.getElementById("post-submission-whatsapp-email");
+                        if (confirmSection) {
+                          confirmSection.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }
+                      }
+                    }}
+                    className="block w-full min-h-[5096px] bg-white border-0 m-0 p-0 overflow-x-hidden"
+                    title="Right-Minds Africa Hub Internship Application"
+                  >
+                    Loading…
+                  </iframe>
+                </div>
+
+                {/* STEP 2: POST-SUBMISSION CONFIRMATION EMAIL & OFFICIAL WHATSAPP GROUP */}
+                <div
+                  id="post-submission-whatsapp-email"
+                  className="p-6 sm:p-10 bg-gradient-to-br from-[#0E3A2F] via-[#12493b] to-[#0b2e25] text-white border-t-4 border-amber-400 space-y-8 scroll-mt-24"
                 >
-                  Loading…
-                </iframe>
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-white/10 pb-6">
+                    <div className="space-y-2 max-w-2xl">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-[#25D366]/20 text-emerald-300 border border-[#25D366]/40 px-3 py-1 rounded-full font-mono">
+                        <CheckCircle2 size={12} /> Final Step After Submitting the Form
+                      </span>
+                      <h3 className="text-2xl sm:text-3xl font-extrabold uppercase font-display tracking-tight text-white">
+                        Get Your Confirmation Email &amp; Join Our Official WhatsApp Community
+                      </h3>
+                      <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
+                        Once you click <strong>Submit</strong> on the form above, enter your name and email below to immediately receive your <strong>Official Application Confirmation Mail</strong> and join our <strong>Internship &amp; Volunteer WhatsApp Community</strong>.
+                      </p>
+                    </div>
+
+                    {/* Direct WhatsApp Join CTA */}
+                    <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0 bg-white/5 border border-white/10 p-4 rounded-2xl">
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold">
+                        Instant WhatsApp Onboarding Link:
+                      </span>
+                      <a
+                        href={whatsappGroupUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-6 py-3.5 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer transition-all"
+                      >
+                        <MessageCircle size={18} className="fill-slate-950" />
+                        <span>Join Official WhatsApp Group</span>
+                        <ExternalLink size={14} />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={handleCopyWhatsappLink}
+                        className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        {copiedWhatsapp ? (
+                          <>
+                            <Check size={13} className="text-emerald-300" />
+                            <span>WhatsApp Link Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={13} />
+                            <span>Copy WhatsApp Link</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quick Confirmation Email Form */}
+                  <form onSubmit={handleGoogleFormQuickConfirm} className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-2xl p-5 sm:p-6 space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <h4 className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-2">
+                        <Mail size={16} />
+                        <span>Send My Official Confirmation Email &amp; WhatsApp Invitation</span>
+                      </h4>
+                      <span className="text-[11px] text-emerald-200 font-mono">
+                        Instant Automated Dispatch
+                      </span>
+                    </div>
+
+                    {gfError && (
+                      <div className="p-3 bg-rose-500/20 border border-rose-400/40 rounded-xl text-xs text-rose-100 flex items-center gap-2">
+                        <AlertCircle size={15} className="shrink-0 text-rose-300" />
+                        <span>{gfError}</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                          Full Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={gfName}
+                          onChange={(e) => setGfName(e.target.value)}
+                          placeholder="Enter your full name"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                          Email Address *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={gfEmail}
+                          onChange={(e) => setGfEmail(e.target.value)}
+                          placeholder="you@example.com"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                          Phone / WhatsApp Number
+                        </label>
+                        <input
+                          type="tel"
+                          value={gfPhone}
+                          onChange={(e) => setGfPhone(e.target.value)}
+                          placeholder="+234 800 000 0000"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                          Primary Role Selected
+                        </label>
+                        <select
+                          value={gfRole}
+                          onChange={(e) => setGfRole(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        >
+                          {VOLUNTEER_ROLES.flatMap(g => g.roles).map(role => (
+                            <option key={role.id} value={role.label}>
+                              {role.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex flex-wrap items-center justify-between gap-4">
+                      <p className="text-[11px] text-emerald-100/80">
+                        We will immediately send your confirmation mail with the WhatsApp group link (<span className="underline text-amber-300">{whatsappGroupUrl}</span>) to your email address.
+                      </p>
+                      <button
+                        type="submit"
+                        disabled={gfSending}
+                        className="px-6 py-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md inline-flex items-center gap-2 cursor-pointer transition-all disabled:opacity-60"
+                      >
+                        {gfSending ? (
+                          <>
+                            <Loader2 size={15} className="animate-spin" />
+                            <span>Sending Confirmation Mail...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mail size={15} />
+                            <span>Send Confirmation Email &amp; Open WhatsApp Link</span>
+                            <ArrowRight size={14} />
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
             ) : (
               /* Direct Interactive Form Mode (100% Full Width) */

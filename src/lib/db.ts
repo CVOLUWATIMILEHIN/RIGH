@@ -696,9 +696,9 @@ export async function saveRegistration(reg: Omit<Registration, "id" | "registere
     programType = "mentorship";
     programName = "Mentorship Applications";
     prefix = "MNT-2026-";
-  } else if (t.includes("volunteer")) {
+  } else if (t.includes("volunteer") || t.includes("intern")) {
     programType = "volunteer";
-    programName = "Volunteer Applications";
+    programName = reg.programName || "Internship & Volunteer Applications";
     prefix = "VOL-2026-";
   } else if (t.includes("partner")) {
     programType = "partnership";
@@ -824,57 +824,6 @@ export async function saveRegistration(reg: Omit<Registration, "id" | "registere
       console.warn("Could not dispatch registration workspace notification to Firestore:", notifErr);
     }
 
-    // Capture Automated Confirmation Email simulation and store in "email_logs"
-    try {
-      let subject = "Welcome to Right Minds Africa";
-      let body = "";
-      const applicantName = newReg.fullName || "Applicant";
-      const regId = newReg.registrationId || newReg.id;
-
-      if (programType === "cii") {
-        subject = "Welcome to Corper Impact Initiative";
-        body = `Dear ${applicantName},\n\nWelcome to the Corper Impact Initiative (CII)!\n\nYour registration has been successfully processed.\n\nRegistration Details:\n* Registration ID: ${regId}\n* Batch: ${newReg.batch || "Batch A, 2026"}\n* State Code: ${newReg.location || "LA/26/1024"}\n\nNext Steps:\n1. Join the official Telegram and WhatsApp community channels.\n2. Review the core curriculum and leadership course material.\n3. Prepare for the foundational orientation webinar starting Saturday December 6th.\n\nWarm regards,\nCII Administration Team`;
-      } else if (programType === "teens") {
-        subject = "Welcome to Right-Minded Teens";
-        body = `Dear ${applicantName},\n\nWe are overjoyed to welcome you to the Right-Minded Teens network!\n\nProgram Details:\n* Registration ID: ${regId}\n* Character Development Circle: Grit & Service Leadership\n* Mentorship Focus: Digital Skills, Integrity Alignment, College Prep\n\nParent Information:\n* Guardian Consent: verified (A separate parental alignment briefing will be dispatched shortly)\n\nEvent Updates:\n* The next virtual teens interactive panel hangout is scheduled for Saturday morning. Please save the date!\n\nWarm regards,\nRMT Empowerment Team`;
-      } else if (programType === "event") {
-        subject = "Event Registration Successful";
-        body = `Dear ${applicantName},\n\nYour registration for our upcoming program has been confirmed!\n\nDetails:\n* Registration ID: ${regId}\n* Event: ${newReg.programName}\n* Date: December 6th, 2026\n* Venue: Zoom Interactive & Right Minds Africa Headquarters, Lagos\n* Time: 10:00 AM UTC+1\n\nAdd to Calendar:\n* Google Calendar Link: https://calendar.google.com/event?action=TEMPLATE&text=RMA+Leadership+Summit\n\nWarm regards,\nEvent Coordinators Desk`;
-      } else if (programType === "course") {
-        subject = "Course Enrollment Confirmed";
-        body = `Dear ${applicantName},\n\nCongratulations on taking the bold leap to unlock your intellectual potential! Your course slot is verified.\n\nDetails:\n* Registration ID: ${regId}\n* Course Title: ${newReg.programName}\n* Learning Portal Link: https://lms.rightmindsafrica.org/portal\n* Payment Reference: ${newReg.paymentReference || "Direct Deposit / Seed Grant Code"}\n\nYour access will be activated immediately upon authentication.\n\nWarm regards,\nLMS Systems Administrator`;
-      } else {
-        subject = `Application Received: Welcome to ${programName}`;
-        body = `Dear ${applicantName},\n\nThank you for applying for ${programName}.\n\nYour dossier has been registered in our central registry database with unique ID: ${regId}.\n\nWorkflows:\n* Our admissions board will evaluate your submitted credentials.\n* If additional information is needed, a coordinator will reach out directly to your provided email/phone.\n\nWarm regards,\nRight Minds Africa Admissions Desk`;
-      }
-
-      const emailLogId = `mail-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const emailLogData = {
-        id: emailLogId,
-        registrationId: regId,
-        programType,
-        recipient: newReg.email,
-        subject,
-        status: "success" as const,
-        timestamp: new Date().toISOString(),
-        sentTime: new Date().toISOString(),
-        deliveryResult: "Completed (Simulated / Local Dispatch Active)",
-        body
-      };
-
-      await setDoc(doc(db, "email_logs", emailLogId), emailLogData);
-      
-      if (typeof window !== "undefined") {
-        const localLogsRaw = localStorage.getItem("rma_email_logs");
-        const list: any[] = localLogsRaw ? JSON.parse(localLogsRaw) : [];
-        list.unshift(emailLogData);
-        localStorage.setItem("rma_email_logs", JSON.stringify(list));
-        window.dispatchEvent(new Event("rma_email_logs_updated"));
-      }
-    } catch (mailLogErr) {
-      console.warn("Could not record automated confirmation email log:", mailLogErr);
-    }
-
     // Save audit log
     saveAuditLog({
       adminEmail: "anonymous_registrant",
@@ -907,7 +856,7 @@ export async function saveRegistration(reg: Omit<Registration, "id" | "registere
     }).catch(() => null);
   }
 
-  // 3. SECURE BACKEND EMAIL TRIGGER (Non-blocking background call)
+  // 3. SECURE BACKEND EMAIL TRIGGER (Authoritative Resend dispatch + Firestore email_logs persistence)
   try {
     fetch("/api/email/trigger", {
       method: "POST",
@@ -917,9 +866,46 @@ export async function saveRegistration(reg: Omit<Registration, "id" | "registere
         registrationId: newReg.id,
         payload: newReg
       })
-    }).then(res => {
-      if (!res.ok) console.warn("Backend mail trigger reported status:", res.status);
-    }).catch(err => console.warn("Background email dispatch network alert (non-blocking):", err));
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json().catch(() => null);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("rma_email_logs_updated"));
+        }
+        return data;
+      })
+      .catch(async (err) => {
+        console.warn("Background email dispatch network alert, recording offline fallback log:", err);
+        const applicantName = newReg.fullName || "Applicant";
+        const regId = newReg.registrationId || newReg.id;
+        const whatsappUrl =
+          (newReg as any).whatsappLink ||
+          (programType === "volunteer"
+            ? "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2"
+            : programType === "cii"
+              ? "https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI"
+              : "https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC");
+        const fallbackSubject =
+          programType === "volunteer"
+            ? "Application Received – Right-Minds Africa Hub Internship & Volunteer Team"
+            : `Application Received: Welcome to ${programName}`;
+        const fallbackBody = `Dear ${applicantName},\n\nThank you for applying for ${programName}.\n\n* Application Reference ID: ${regId}\n* Official WhatsApp Link: ${whatsappUrl}\n\nJoin WhatsApp Community: ${whatsappUrl}\n\nWarm regards,\nRight-Minds Africa Hub Team`;
+        const emailLogId = `mail-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        await saveEmailLog({
+          id: emailLogId,
+          registrationId: regId,
+          programType,
+          recipient: newReg.email,
+          subject: fallbackSubject,
+          status: "failed",
+          sentTime: new Date().toISOString(),
+          deliveryResult: `Offline queue fallback (${err?.message || "network unreachable"})`,
+          body: fallbackBody
+        }).catch(() => null);
+      });
   } catch (apiErr) {
     console.warn("Background email dispatch error (non-blocking):", apiErr);
   }
@@ -5065,6 +5051,8 @@ export interface EmailSettings {
     paymentRejectedBody: string;
     courseEnrollmentSubject: string;
     courseEnrollmentBody: string;
+    volunteerWelcomeSubject?: string;
+    volunteerWelcomeBody?: string;
   };
   ciiCounter?: number;
   rmaCounter?: number;
@@ -5102,7 +5090,9 @@ export const DEFAULT_EMAIL_SETTINGS: EmailSettings = {
     paymentRejectedSubject: "Payment Review Action Required – {{programName}}",
     paymentRejectedBody: "Dear {{fullName}},\n\nWe were unable to verify your payment for {{programName}}.\n\nYour submission was flagged during audit.\n\nAudit Remarks:\n{{remarks}}\n\nDetails:\n* Registration ID: {{referenceNumber}}\n* Payment Reference: {{paymentReference}}\n\nPlease re-check your payment reference or re-upload your receipt screenshot in your portal.\n\nRegards,\nRight Minds Africa team",
     courseEnrollmentSubject: "Course Enrollment Confirmation - {{courseTitle}}",
-    courseEnrollmentBody: "Dear {{studentName}},\n\nYou have been successfully enrolled in {{courseTitle}}!\n\nHere are your transaction details:\n* Course Name: {{courseTitle}}\n* Payment Reference: {{paymentReference}}\n* Student Email: {{studentEmail}}\n\nYou can start learning immediately using the links below:\n* Link to Learning Portal: {{learningPortalLink}}\n* Link to Student Dashboard: {{dashboardLink}}\n\n🚀 JOIN THE OFFICIAL COMMUNITY:\n* WhatsApp Community Group: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC"
+    courseEnrollmentBody: "Dear {{studentName}},\n\nYou have been successfully enrolled in {{courseTitle}}!\n\nHere are your transaction details:\n* Course Name: {{courseTitle}}\n* Payment Reference: {{paymentReference}}\n* Student Email: {{studentEmail}}\n\nYou can start learning immediately using the links below:\n* Link to Learning Portal: {{learningPortalLink}}\n* Link to Student Dashboard: {{dashboardLink}}\n\n🚀 JOIN THE OFFICIAL COMMUNITY:\n* WhatsApp Community Group: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC",
+    volunteerWelcomeSubject: "Application Received – Right-Minds Africa Hub Internship & Volunteer Team",
+    volunteerWelcomeBody: "Dear {{fullName}},\n\nThank you for applying to join the Right-Minds Africa Hub Internship & Volunteer Team!\n\nYour application has been successfully received and logged for review. Here is a summary of your submission:\n* Applicant Name: {{fullName}}\n* Application Reference ID: {{referenceNumber}}\n* Primary Role / Department: {{department}}\n* Location: {{stateCode}}\n* Submission Date: {{submissionDate}}\n* Official WhatsApp Link: {{whatsappLink}}\n\nJoin WhatsApp Community: {{whatsappLink}}\n\nWhat Happens Next?\n1. Click the green button or WhatsApp link above ({{whatsappLink}}) to join our official WhatsApp community immediately for onboarding updates, orientation schedules, and team announcements.\n2. Our coordinating team will review your application details and introduction video.\n3. We will contact you via email and WhatsApp regarding the next steps in your onboarding process.\n\nWarm regards,\nRight-Minds Africa Hub & Corper Impact Initiative Team"
   },
   ciiCounter: 0,
   rmaCounter: 0,

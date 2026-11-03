@@ -1,7 +1,9 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|favicon\\.ico).*)",
+      "source": "/((?!api/|assets/|favicon\\.ico|favicon\\.png|apple-touch-icon\\.png|robots\\.txt|sitemap\\.xml|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|woff|woff2|ttf|eot|json|xml|txt)$).*)",
       "destination": "/index.html"
     }
   ]

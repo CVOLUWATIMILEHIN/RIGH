@@ -3,6 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { Resend } from "resend";
 import dns from "dns";
 
 // Support both local and global DNS lookups gracefully without latency
@@ -761,7 +762,9 @@ const serverDefaultEmailSettings = {
     paymentRejectedSubject: "Payment Review Action Required – {{programName}}",
     paymentRejectedBody: "Dear {{fullName}},\n\nWe were unable to verify your payment for {{programName}}.\n\nYour submission was flagged during audit.\n\nAudit Remarks:\n{{remarks}}\n\nDetails:\n* Registration ID: {{referenceNumber}}\n* Payment Reference: {{paymentReference}}\n\nPlease re-check your payment reference or re-upload your receipt screenshot in your portal.\n\nRegards,\nRight Minds Africa team",
     courseEnrollmentSubject: "Course Enrollment Confirmation - {{courseTitle}}",
-    courseEnrollmentBody: "Dear {{studentName}},\n\nYou have been successfully enrolled in {{courseTitle}}!\n\nHere are your transaction details:\n* Course Name: {{courseTitle}}\n* Payment Reference: {{paymentReference}}\n* Student Email: {{studentEmail}}\n\nYou can start learning immediately using the links below:\n* Link to Learning Portal: {{learningPortalLink}}\n* Link to Student Dashboard: {{dashboardLink}}\n\n🚀 JOIN THE OFFICIAL COMMUNITY:\n* WhatsApp Community Group: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC"
+    courseEnrollmentBody: "Dear {{studentName}},\n\nYou have been successfully enrolled in {{courseTitle}}!\n\nHere are your transaction details:\n* Course Name: {{courseTitle}}\n* Payment Reference: {{paymentReference}}\n* Student Email: {{studentEmail}}\n\nYou can start learning immediately using the links below:\n* Link to Learning Portal: {{learningPortalLink}}\n* Link to Student Dashboard: {{dashboardLink}}\n\n🚀 JOIN THE OFFICIAL COMMUNITY:\n* WhatsApp Community Group: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC",
+    volunteerWelcomeSubject: "Thank You for Applying – Right-Minds Africa Hub Internship & Volunteer Team",
+    volunteerWelcomeBody: "Dear {{fullName}},\n\nThank you for your interest in joining the Right-Minds Africa Hub Internship & Volunteer Team! We deeply appreciate your willingness to contribute your skills toward shaping a generation across Africa.\n\nYour application has been successfully received and logged for review. Here is a summary of your submission:\n* Applicant Name: {{fullName}}\n* Application Reference ID: {{referenceNumber}}\n* Primary Role / Department: {{department}}\n* Location: {{stateCode}}\n* Submission Date: {{submissionDate}}\n* Direct WhatsApp Support & Community Link: {{whatsappLink}}\n\nJoin WhatsApp Community: {{whatsappLink}}\n\nWhatsApp Support Link: {{whatsappLink}}\n\nWhat Happens Next & Support for Queries:\n1. Click the WhatsApp button or link above ({{whatsappLink}}) to join our official WhatsApp community immediately and reach our coordinators directly for any queries or support.\n2. Our coordinating team will review your application details and introduction video.\n3. We will contact you via email and WhatsApp regarding the next steps in your onboarding process.\n\nWarm regards,\nRight-Minds Africa Hub & Corper Impact Initiative Team"
   }
 };
 
@@ -929,29 +932,7 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
   const apiKey = process.env.RESEND_API_KEY;
   const senderEmail = process.env.SENDER_EMAIL || "onboarding@resend.dev";
   const fromNameAndEmail = `"${senderOpts.senderName}" <${senderEmail}>`;
-
-  let finalTo = to;
-  let finalSubject = subject;
-  let finalTextBody = textBody;
-  let redirectBanner = "";
-
-  // If using standard onboarding sandbox domain, we must route everything to the verified user email
-  const isSandboxEmail = senderEmail === "onboarding@resend.dev";
-  const isSelf = to.toLowerCase().trim() === "olosundelouis@gmail.com";
-  let isRedirected = false;
-
-  if (isSandboxEmail && !isSelf && apiKey) {
-    finalTo = "olosundelouis@gmail.com";
-    finalSubject = `[Sandbox Redirect for ${to}] ${subject}`;
-    finalTextBody = `[SANDBOX TRIAL REDIRECT] Originally destined for <${to}>, but forwarded due to Resend trial limits.\n\n${textBody}`;
-    isRedirected = true;
-    redirectBanner = `
-      <div style="background-color: #FEF3C7; border: 1px solid #D97706; padding: 12px; margin-bottom: 20px; border-radius: 8px; font-size: 11px; color: #92400E; line-height: 1.4; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-        <strong>SANDBOX RESEND REDIRECT</strong><br/>
-        This official template was originally addressed to <code>${to}</code>. It was redirected to your verified account <code>olosundelouis@gmail.com</code> because the <code>onboarding@resend.dev</code> trial sender is in use.
-      </div>
-    `;
-  }
+  const fallbackFrom = `"${senderOpts.senderName}" <onboarding@resend.dev>`;
 
   // Helper build function for professional email layout
   const buildHtmlBody = (banner: string, bodyText: string) => `
@@ -999,12 +980,32 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
                   </div>
                 `;
               }
+              if (trimmed.startsWith("Join WhatsApp Community: ")) {
+                const url = trimmed.replace("Join WhatsApp Community: ", "").trim();
+                return `
+                  <div style="text-align: center; margin: 28px 0;">
+                    <a href="${url}" target="_blank" rel="noopener noreferrer" style="background-color: #25D366; color: #FFFFFF; padding: 14px 28px; font-size: 14px; font-weight: 800; text-decoration: none; border-radius: 12px; display: inline-block; text-transform: uppercase; letter-spacing: 0.05em; box-shadow: 0 4px 10px rgba(37,211,102,0.25);">Join Official WhatsApp Community &rarr;</a>
+                  </div>
+                `;
+              }
+              if (trimmed.startsWith("WhatsApp Support Link: ")) {
+                const url = trimmed.replace("WhatsApp Support Link: ", "").trim();
+                return `
+                  <div style="text-align: center; margin: 20px 0;">
+                    <a href="${url}" target="_blank" rel="noopener noreferrer" style="background-color: #103D2E; color: #FCD34D; padding: 12px 24px; font-size: 13px; font-weight: 800; text-decoration: none; border-radius: 12px; display: inline-block; text-transform: uppercase; letter-spacing: 0.05em; border: 1px solid #25D366;">Chat on WhatsApp Support for Queries &rarr;</a>
+                  </div>
+                `;
+              }
               if (trimmed.startsWith("* ") && trimmed.includes(":")) {
                 const [k, ...rest] = trimmed.slice(2).split(":");
                 const val = rest.join(":").trim();
+                const renderedVal =
+                  val.startsWith("http://") || val.startsWith("https://")
+                    ? `<a href="${val}" target="_blank" rel="noopener noreferrer" style="color: #0D9488; text-decoration: underline; word-break: break-all;">${val}</a>`
+                    : val;
                 return `
                   <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; font-size: 13px;">
-                    <strong style="color: #103D2E;">${k}:</strong> <span style="font-family: monospace; font-weight: 700; color: #0F172A;">${val}</span>
+                    <strong style="color: #103D2E;">${k}:</strong> <span style="font-family: monospace; font-weight: 700; color: #0F172A;">${renderedVal}</span>
                   </div>
                 `;
               }
@@ -1027,67 +1028,82 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
   `;
 
   if (apiKey) {
+    const resend = new Resend(apiKey);
     try {
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          from: fromNameAndEmail,
-          to: [finalTo],
-          subject: finalSubject,
-          html: buildHtmlBody(redirectBanner, finalTextBody),
-          reply_to: senderOpts.replyTo
-        })
+      // Stage 1: Attempt direct primary delivery to the actual recipient
+      const { data, error } = await resend.emails.send({
+        from: fromNameAndEmail,
+        to: [to],
+        subject,
+        html: buildHtmlBody("", textBody),
+        text: textBody,
+        replyTo: senderOpts.replyTo
       });
 
-      const resData: any = await response.json();
-      if (!response.ok) {
-        throw new Error(resData.message || JSON.stringify(resData));
+      if (error) {
+        throw new Error(error.message || JSON.stringify(error));
       }
-      return { success: true, messageId: resData.id };
+      return { success: true, simulated: false, messageId: data?.id };
     } catch (err: any) {
-      console.error("[Email Mailer] Resend API failed:", err);
-      const errMsg = err.message || String(err);
+      console.warn("[Email Mailer] Primary Resend dispatch returned notice:", err?.message || err);
+      let errMsg = err?.message || String(err);
 
-      // Reactive recovery: if the API complains about trial restrictions but we haven't redirected yet, force redirect now and retry!
-      if (errMsg.includes("You can only send testing emails") && !isRedirected) {
-        console.warn("[Email Mailer] Trial restriction detected. Retrying with verified sandbox recipient: olosundelouis@gmail.com...");
-        const retryTo = "olosundelouis@gmail.com";
+      // Stage 2: If custom SENDER_EMAIL domain is not yet verified in Resend DNS, retry to actual recipient with onboarding@resend.dev
+      if (senderEmail !== "onboarding@resend.dev" && (errMsg.toLowerCase().includes("not verified") || errMsg.toLowerCase().includes("domain"))) {
+        try {
+          const { data: stage2Data, error: stage2Err } = await resend.emails.send({
+            from: fallbackFrom,
+            to: [to],
+            subject,
+            html: buildHtmlBody("", textBody),
+            text: textBody,
+            replyTo: senderOpts.replyTo
+          });
+          if (!stage2Err && stage2Data?.id) {
+            return { success: true, simulated: false, messageId: stage2Data.id };
+          }
+          if (stage2Err) {
+            errMsg = stage2Err.message || JSON.stringify(stage2Err);
+          }
+        } catch (s2Catch: any) {
+          errMsg = s2Catch?.message || errMsg;
+        }
+      }
+
+      // Stage 3: If Resend is in sandbox/trial mode (only sends to Resend account owner), extract owner email & relay
+      if (
+        errMsg.includes("You can only send testing emails") ||
+        errMsg.toLowerCase().includes("not verified") ||
+        errMsg.toLowerCase().includes("testing emails")
+      ) {
+        const ownerMatch = errMsg.match(/\(([^)]+@[^)]+)\)/);
+        const retryTo = ownerMatch && ownerMatch[1] ? ownerMatch[1].trim() : "olosundelouis@gmail.com";
+        console.warn(`[Email Mailer] Sandbox trial restriction detected. Relaying via verified sandbox recipient: ${retryTo}...`);
         const retrySubject = `[Sandbox Redirect for ${to}] ${subject}`;
-        const retryText = `[SANDBOX TRIAL REDIRECT] Originally destined for <${to}>, but forwarded due to Resend trial limits.\n\n${textBody}`;
+        const retryText = `[SANDBOX TRIAL REDIRECT] Originally destined for <${to}>, forwarded due to Resend sandbox mode.\n\n${textBody}`;
         const retryBanner = `
           <div style="background-color: #FEF3C7; border: 1px solid #D97706; padding: 12px; margin-bottom: 20px; border-radius: 8px; font-size: 11px; color: #92400E; line-height: 1.4; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
             <strong>SANDBOX RESEND REDIRECT</strong><br/>
-            This email was destined for <code>${to}</code> but was redirected to your verified account <code>olosundelouis@gmail.com</code> due to Resend trial limits.
+            This official confirmation email was addressed to <code>${to}</code>. It was routed to your verified Resend account <code>${retryTo}</code> because Resend is currently in sandbox mode (<code>onboarding@resend.dev</code>). Once your custom domain is verified in Resend and set in <code>SENDER_EMAIL</code>, emails go directly to every applicant without this banner.
           </div>
         `;
         try {
-          const fallbackResponse = await fetch("https://api.resend.com/emails", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              from: fromNameAndEmail,
-              to: [retryTo],
-              subject: retrySubject,
-              html: buildHtmlBody(retryBanner, retryText),
-              reply_to: senderOpts.replyTo
-            })
+          const { data: fallbackData, error: fallbackError } = await resend.emails.send({
+            from: fallbackFrom,
+            to: [retryTo],
+            subject: retrySubject,
+            html: buildHtmlBody(retryBanner, retryText),
+            text: retryText,
+            replyTo: senderOpts.replyTo
           });
-          const fallbackResData: any = await fallbackResponse.json();
-          if (fallbackResponse.ok) {
-            return { success: true, messageId: fallbackResData.id };
+          if (!fallbackError && fallbackData?.id) {
+            return { success: true, simulated: false, messageId: fallbackData.id, sandboxRedirectTo: retryTo };
           }
         } catch (fallbackErr: any) {
           console.error("[Email Mailer] Redirection defense retry failed:", fallbackErr);
         }
       }
-      return { success: false, error: errMsg };
+      return { success: false, simulated: false, error: errMsg };
     }
   } else {
     // Beautiful sandbox local simulation printed cleanly to Cloud Run logs
@@ -1100,15 +1116,17 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
     console.log(textBody);
     console.log(`==================================================\n`);
     
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return { success: true, messageId: `SIM-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return { success: true, simulated: true, messageId: `SIM-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
   }
 }
 
 // Trigger post endpoint processing standard automated workflows
 app.post("/api/email/trigger", async (req, res) => {
   try {
-    const { event, registrationId, payload } = req.body;
+    const event = req.body?.event || req.body?.type;
+    const registrationId = req.body?.registrationId;
+    const payload = req.body?.payload || req.body?.record || req.body || {};
     if (!event) return res.status(400).json({ error: "Missing action event marker." });
 
     console.log(`[Email Engine] Trigger received for event: [${event}]`);
@@ -1124,10 +1142,43 @@ app.post("/api/email/trigger", async (req, res) => {
 
     const submissionDate = new Date().toLocaleDateString("en-US", { year: 'numeric', month: 'long', day: 'numeric' });
 
-    if (event === "REGISTRATION_CREATED") {
+    if (event === "TEST_EMAIL_DISPATCH") {
+      const targetEmail = (payload?.email || senderOpts.notificationEmail || "olosundelouis@gmail.com").trim();
+      const whatsappUrl = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
+      const subject = " Diagnostic Test – Right-Minds Africa Hub Auto Email API";
+      const textBody = `Dear Administrator,\n\nThis is a live diagnostic test from your Right-Minds Africa Hub Automated Email API.\n\nDiagnostic Details:\n* Target Recipient: ${targetEmail}\n* Outbound Sender Name: ${senderOpts.senderName}\n* Configured SENDER_EMAIL: ${process.env.SENDER_EMAIL || "onboarding@resend.dev"}\n* Resend API Key Configured: ${process.env.RESEND_API_KEY ? "YES (Live Resend Mode)" : "NO (Simulation Mode)"}\n* Internship WhatsApp Link: ${whatsappUrl}\n* Timestamp: ${new Date().toISOString()}\n\nJoin WhatsApp Community: ${whatsappUrl}\n\nYour automated email dispatch pipeline is operational!\n\nWarm regards,\nRight-Minds Africa Hub Systems`;
+
+      const mailRes = await sendEmailViaResend(targetEmail, subject, textBody, senderOpts);
+      const logEntry = await logEmailTransaction(db, {
+        recipient: targetEmail,
+        subject,
+        body: textBody,
+        registrationId: `TEST-${Date.now().toString().slice(-6)}`,
+        programType: "volunteer",
+        status: mailRes.success ? "success" : "failed",
+        deliveryResult: mailRes.success
+          ? `Diagnostic test delivered: ref=${mailRes.messageId}${mailRes.simulated ? " (Simulation Mode - Set RESEND_API_KEY in env for live inbox delivery)" : ""}${(mailRes as any).sandboxRedirectTo ? ` (Relayed via Resend sandbox owner ${(mailRes as any).sandboxRedirectTo})` : ""}`
+          : `Diagnostic test failed: ${mailRes.error}`
+      });
+
+      return res.json({
+        success: mailRes.success,
+        status: mailRes.success ? "success" : "failed",
+        simulated: !!mailRes.simulated,
+        hasResendKey: !!process.env.RESEND_API_KEY,
+        senderEmail: process.env.SENDER_EMAIL || "onboarding@resend.dev",
+        sandboxRedirectTo: (mailRes as any).sandboxRedirectTo || null,
+        messageId: mailRes.messageId || null,
+        logId: logEntry.id,
+        logEntry,
+        error: mailRes.error || null
+      });
+    }
+
+    if (event === "REGISTRATION_CREATED" || event === "VOLUNTEER_APPLICATION_SUBMITTED") {
       const applicantName = payload.fullName || payload.applicantName || "Applicant";
       const applicantEmail = payload.email;
-      const refNumber = payload.referenceNumber || payload.registrationId || "PENDING";
+      const refNumber = payload.referenceNumber || payload.registrationId || payload.id || "PENDING";
       
       if (!applicantEmail) return res.status(400).json({ error: "Applicant has no registered email." });
 
@@ -1135,7 +1186,7 @@ app.post("/api/email/trigger", async (req, res) => {
       let progType = "cii";
       let pName = "Corper Impact Initiative (CII)";
       
-      const rawProg = (payload.programType || payload.profileType || "").toLowerCase();
+      const rawProg = (payload.programType || payload.profileType || (event === "VOLUNTEER_APPLICATION_SUBMITTED" ? "volunteer" : "")).toLowerCase();
 
       if (rawProg === "cii" || rawProg.startsWith("cii")) {
         progType = "cii";
@@ -1158,9 +1209,9 @@ app.post("/api/email/trigger", async (req, res) => {
       } else if (rawProg.includes("mentor") || rawProg === "mentorship") {
         progType = "mentorship";
         pName = "Mentorship Applications";
-      } else if (rawProg.includes("volunteer") || rawProg === "volunteer") {
+      } else if (rawProg.includes("volunteer") || rawProg.includes("intern") || rawProg === "volunteer" || rawProg === "internship") {
         progType = "volunteer";
-        pName = "Volunteer Applications";
+        pName = payload.programName || "Internship & Volunteer Applications";
       } else if (rawProg.includes("partner") || rawProg === "partnership") {
         progType = "partnership";
         pName = "Partnership Requests";
@@ -1178,19 +1229,19 @@ app.post("/api/email/trigger", async (req, res) => {
         event: "Event Registration Successful",
         course: "Course Enrollment Confirmed",
         mentorship: "Mentorship Application Received",
-        volunteer: "Volunteer Application Received",
+        volunteer: "Thank You for Applying – Right-Minds Africa Hub Internship & Volunteer Team",
         partnership: "Partnership Request Received",
       };
 
       const defaultBodies: Record<string, string> = {
-        cii: "Dear {{fullName}},\n\nThank you for registering for the famous Corper Impact Initiative (CII) – Batch A 2026. This is the starting point of your service-year transformation.\n\nYour registration details are securely persisted as follows:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Assigned Program: {{programName}}\n* National Batch: {{batch}}\n* NYSC State Code: {{stateCode}}\n* Registration Date: {{submissionDate}}\n\n🚀 NEXT CRITICAL STEPS & CHANNELS:\nTo hit the ground running, network with fellow participants, and receive instant updates, please join:\n* WhatsApp Waitlist: https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI\n* Telegram Cohort Gateway: https://t.me/+_iA-Xr3CqEoyYzhk\n\nIf you would like to upgrade your enrollment to high-touch Growth or Impact VIP packages (with direct workspace placement assistance and personalized mentoring), please access your dashboard.\n\nOur administrators will review your credentials shortly. You do not need to refresh this page or take any further actions.\n\nRegards,\nCII Admins & Right Minds Africa Board",
-        teens: "Dear {{fullName}},\n\nWe are absolutely thrilled to welcome you to the Right-Minded Teens growth curriculum.\n\nYour registration details:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Selected Track: {{programName}}\n* Parent/Guardian Name: {{parentName}}\n* Parent Contacts: {{parentPhone}}\n* Level / Class Area: {{class}}\n* Submission Date: {{submissionDate}}\n\nWhat to Expect:\nRight-Minded Teens empowers young secondary school students with high moral character, emotional intelligence, career pathways, and academic excellence.\n\nOur Teens Department coordinators will reach out to you and your parent/guardian within 48 hours for the onboarding interview and virtual class links.\n\n🚀 STAY UPDATED:\n* Join Teen Hub: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nTeens Department coordinators",
-        young_leaders: "Dear {{fullName}},\n\nCongratulations! Your application for the Young Leaders Program (YLP) Cohort has been successfully received.\n\nYour details:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Program: {{programName}}\n* University/Institution: {{institution}}\n* Year/Academic Level: {{level}}\n* Submission Date: {{submissionDate}}\n\nSyllabus Overview & Core Themes:\n* Duration: 6 Months intensive leadership track\n* Objectives: Self-governance, systemic problem solving, ethics, and project coordination.\n* Learning Portal & Syllabus Link: https://rightmindsafrica.org/\n\nNext Steps:\nOur Youth Curators Board will audit your leadership philosophy statements. Top nominees will be invited for video evaluation prompts.\n\n🚀 CHANNELS:\n* WhatsApp Room: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nYouth Curators Board",
-        yap: "Dear {{fullName}},\n\nYour delegate seat at the annual Youth Advisory Program (YAP) Conference is officially confirmed!\n\nPass Details:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Delegate Pass ID: {{delegatePassId}}\n* Selected Track: {{track}}\n* Mode of Attendance: {{mode}} (Physical/Virtual)\n* Confirmed Venue: RMA Hall, Lagos\n* Event Schedule Date: November 2026\n* T-Shirt Selector Choice: {{tshirtSize}}\n\n🚀 AGENDA LINK & CALENDAR:\nDownload the detailed conference speaker roster, bento breakout agendas, and calendar notification via:\n* Dynamic Program Portal: https://rightmindsafrica.org/\n* WhatsApp Delegate Circle: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nWe look forward to meeting you live!\n\nRegards,\nYAP Conference board",
-        event: "Dear {{fullName}},\n\nWe are pleased to confirm your physical slot reservation for the upcoming RMA Events & Hangouts.\n\nEvent Details:\n* Ref Registration ID: {{referenceNumber}}\n* Guest/Entity Name: {{fullName}}\n* Selected Event Unit: {{programName}}\n* Planned Location Venue: {{venue}}\n* Date & Planned Time: {{eventDate}} at {{time}}\n* Accompanied Seats Count: {{guestCount}}\n\n🚀 CALENDAR DOWNLOADS & CHANNELS:\nDon't miss the calendar trigger! Download the event reminder and join other attendees inside the event coordinator channels:\n* Join Community Room: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n* Portal Schedule: https://rightmindsafrica.org/\n\nWe cannot wait to host you!\n\nRegards,\nEvent coordinators",
-        course: "Dear {{fullName}},\n\nWelcome to your Premium Course enrollment with Right Minds Africa LMS!\n\nCourse Details:\n* Name: {{fullName}}\n* Ref Registration ID: {{referenceNumber}}\n* Course Title: {{courseTitle}}\n* Payment Verified Ref: {{paymentReference}}\n* Learning Portal URI: https://rightmindsafrica.org/\n\nWelcome message:\nYour workspace dashboard registration is now active. Access lesson guides, downloads, and progress check-ins instantly by logging into the academy learning portal.\n\n🚀 DISCORD / WHATSAPP CIRCLE:\nJoin other active scholars in the high-touch premium support spaces:\n* Course Circle WhatsApp: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nLMS admins",
-        mentorship: "Dear {{fullName}},\n\nWe have successfully registered your application for the RMA One-on-One Mentorship Program.\n\nDossier Details:\n* Applicant: {{fullName}}\n* Ref Registration ID: {{referenceNumber}}\n* Experience Focus Area: {{experienceArea}}\n* Desired Mentor Sector: {{industry}}\n* Target Development Goal: {{aspiration}}\n\nCandidate Matching Checklist:\n- Match evaluation according to industry/aspiration alignment (Pending)\n- Mentor pool capacity checks (In Progress)\n- Interactive orientation schedule dispatch (Coming soon)\n\nOur Mentorship team is auditing alignment profiles to match you with a compatible Director or Industry Leader. Expect matching feedback via email very soon.\n\nRegards,\nMentorship coordinators",
-        volunteer: "Dear {{fullName}},\n\nThank you for volunteering your talents to build Right Minds Africa. Every hour of service changes a life!\n\nApplication Details:\n* Volunteer Name: {{fullName}}\n* Ref Registration ID: {{referenceNumber}}\n* Assigned Department: {{department}}\n* Weekly Commitment hours: {{availableHours}}\n* Submission Date: {{submissionDate}}\n\nOur Volunteer Coordinators will host the next onboarding briefing and orientation session in a few days. We will review your skillset details and email your schedule details shortly.\n\n🚀 COMMUNICATE IN CHANNELS:\n* Slack/WhatsApp Gateway: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nVolunteer coordinators",
+        cii: "Dear {{fullName}},\n\nThank you for registering for the famous Corper Impact Initiative (CII) – Batch A 2026. This is the starting point of your service-year transformation.\n\nYour registration details are securely persisted as follows:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Assigned Program: {{programName}}\n* National Batch: {{batch}}\n* NYSC State Code: {{stateCode}}\n* Registration Date: {{submissionDate}}\n\n🚀 NEXT CRITICAL STEPS & CHANNELS:\nTo hit the ground running, network with fellow participants, and receive instant updates, please join:\n* WhatsApp Waitlist: https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI\n* Telegram Cohort Gateway: https://t.me/+_iA-Xr3CqEoyYzhk\n\nJoin WhatsApp Community: https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI\n\nIf you would like to upgrade your enrollment to high-touch Growth or Impact VIP packages (with direct workspace placement assistance and personalized mentoring), please access your dashboard.\n\nOur administrators will review your credentials shortly. You do not need to refresh this page or take any further actions.\n\nRegards,\nCII Admins & Right Minds Africa Board",
+        teens: "Dear {{fullName}},\n\nWe are absolutely thrilled to welcome you to the Right-Minded Teens growth curriculum.\n\nYour registration details:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Selected Track: {{programName}}\n* Parent/Guardian Name: {{parentName}}\n* Parent Contacts: {{parentPhone}}\n* Level / Class Area: {{class}}\n* Submission Date: {{submissionDate}}\n\nWhat to Expect:\nRight-Minded Teens empowers young secondary school students with high moral character, emotional intelligence, career pathways, and academic excellence.\n\nOur Teens Department coordinators will reach out to you and your parent/guardian within 48 hours for the onboarding interview and virtual class links.\n\n🚀 STAY UPDATED:\n* Join Teen Hub: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nTeens Department coordinators",
+        young_leaders: "Dear {{fullName}},\n\nCongratulations! Your application for the Young Leaders Program (YLP) Cohort has been successfully received.\n\nYour details:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Program: {{programName}}\n* University/Institution: {{institution}}\n* Year/Academic Level: {{level}}\n* Submission Date: {{submissionDate}}\n\nSyllabus Overview & Core Themes:\n* Duration: 6 Months intensive leadership track\n* Objectives: Self-governance, systemic problem solving, ethics, and project coordination.\n* Learning Portal & Syllabus Link: https://rightmindsafrica.org/\n\nNext Steps:\nOur Youth Curators Board will audit your leadership philosophy statements. Top nominees will be invited for video evaluation prompts.\n\n🚀 CHANNELS:\n* WhatsApp Room: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nYouth Curators Board",
+        yap: "Dear {{fullName}},\n\nYour delegate seat at the annual Youth Advisory Program (YAP) Conference is officially confirmed!\n\nPass Details:\n* Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Delegate Pass ID: {{delegatePassId}}\n* Selected Track: {{track}}\n* Mode of Attendance: {{mode}} (Physical/Virtual)\n* Confirmed Venue: RMA Hall, Lagos\n* Event Schedule Date: November 2026\n* T-Shirt Selector Choice: {{tshirtSize}}\n\n🚀 AGENDA LINK & CALENDAR:\nDownload the detailed conference speaker roster, bento breakout agendas, and calendar notification via:\n* Dynamic Program Portal: https://rightmindsafrica.org/\n* WhatsApp Delegate Circle: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nWe look forward to meeting you live!\n\nRegards,\nYAP Conference board",
+        event: "Dear {{fullName}},\n\nWe are pleased to confirm your physical slot reservation for the upcoming RMA Events & Hangouts.\n\nEvent Details:\n* Ref Registration ID: {{referenceNumber}}\n* Guest/Entity Name: {{fullName}}\n* Selected Event Unit: {{programName}}\n* Planned Location Venue: {{venue}}\n* Date & Planned Time: {{eventDate}} at {{time}}\n* Accompanied Seats Count: {{guestCount}}\n\n🚀 CALENDAR DOWNLOADS & CHANNELS:\nDon't miss the calendar trigger! Download the event reminder and join other attendees inside the event coordinator channels:\n* Join Community Room: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n* Portal Schedule: https://rightmindsafrica.org/\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nWe cannot wait to host you!\n\nRegards,\nEvent coordinators",
+        course: "Dear {{fullName}},\n\nWelcome to your Premium Course enrollment with Right Minds Africa LMS!\n\nCourse Details:\n* Name: {{fullName}}\n* Ref Registration ID: {{referenceNumber}}\n* Course Title: {{courseTitle}}\n* Payment Verified Ref: {{paymentReference}}\n* Learning Portal URI: https://rightmindsafrica.org/\n\nWelcome message:\nYour workspace dashboard registration is now active. Access lesson guides, downloads, and progress check-ins instantly by logging into the academy learning portal.\n\n🚀 DISCORD / WHATSAPP CIRCLE:\nJoin other active scholars in the high-touch premium support spaces:\n* Course Circle WhatsApp: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nRegards,\nLMS admins",
+        mentorship: "Dear {{fullName}},\n\nWe have successfully registered your application for the RMA One-on-One Mentorship Program.\n\nDossier Details:\n* Applicant: {{fullName}}\n* Ref Registration ID: {{referenceNumber}}\n* Experience Focus Area: {{experienceArea}}\n* Desired Mentor Sector: {{industry}}\n* Target Development Goal: {{aspiration}}\n\nCandidate Matching Checklist:\n- Match evaluation according to industry/aspiration alignment (Pending)\n- Mentor pool capacity checks (In Progress)\n- Interactive orientation schedule dispatch (Coming soon)\n\n🚀 JOIN THE COMMUNITY:\n* Official WhatsApp Link: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nJoin WhatsApp Community: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC\n\nOur Mentorship team is auditing alignment profiles to match you with a compatible Director or Industry Leader. Expect matching feedback via email very soon.\n\nRegards,\nMentorship coordinators",
+        volunteer: "Dear {{fullName}},\n\nThank you for your interest in joining the Right-Minds Africa Hub Internship & Volunteer Team! We deeply appreciate your willingness to contribute your skills toward shaping a generation.\n\nApplication Details:\n* Applicant Name: {{fullName}}\n* Application Reference ID: {{referenceNumber}}\n* Primary Role / Department: {{department}}\n* Location: {{stateCode}}\n* Availability & Arrangement: {{availableHours}}\n* Submission Date: {{submissionDate}}\n* Direct WhatsApp Support & Community Link: {{whatsappLink}}\n\nJoin WhatsApp Community: {{whatsappLink}}\n\nWhatsApp Support Link: {{whatsappLink}}\n\nWhat Happens Next & Support for Queries:\n1. Click the green button or WhatsApp link above ({{whatsappLink}}) to join our official WhatsApp community immediately and reach our team directly for any queries or support.\n2. Our coordinating team will review your application and 60-second introduction video.\n3. Shortlisted applicants will be contacted via email and WhatsApp regarding the next steps.\n\nWarm regards,\nRight-Minds Africa Hub & Corper Impact Initiative Team",
         partnership: "Dear {{fullName}},\n\nThank you for initiating a collaboration request with Right Minds Africa.\n\nProposal parameters:\n* Organization Name: {{organization}}\n* Representative Officer: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Partnership Target Range: {{partnershipType}}\n* Submission Date: {{submissionDate}}\n\nCollaboration Review Timeline:\nOur Operations Board reviews formal partnership alignment agendas on Tuesdays. Our partnership lead will reply to your submission with a scheduling agenda link to align models and discuss resources.\n\nThank you for your trust and commitment.\n\nRegards,\nOperations Board"
       };
 
@@ -1199,7 +1250,15 @@ app.post("/api/email/trigger", async (req, res) => {
       const bdySettingsKey = `${progType}WelcomeBody`;
 
       const tplSubjectRaw = settings.templates?.[subSettingsKey] || defaultSubjects[progType] || "Welcome to Right Minds Africa";
-      const tplBodyRaw = settings.templates?.[bdySettingsKey] || defaultBodies[progType] || "Dear {{fullName}},\n\nThank you for registering.";
+      const tplBodyRaw = settings.templates?.[bdySettingsKey] || defaultBodies[progType] || "Dear {{fullName}},\n\nThank you for registering.\n\n* Official WhatsApp Link: {{whatsappLink}}\n\nJoin WhatsApp Community: {{whatsappLink}}";
+
+      const resolvedWhatsappLink =
+        payload.whatsappLink ||
+        (progType === "cii"
+          ? "https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI"
+          : progType === "volunteer"
+          ? "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2"
+          : "https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC");
 
       // Custom variables maps for parsing
       const parseVars: Record<string, string> = {
@@ -1210,6 +1269,7 @@ app.post("/api/email/trigger", async (req, res) => {
         registrationId: refNumber,
         programName: pName,
         submissionDate,
+        whatsappLink: resolvedWhatsappLink,
         batch: payload.batch || "Batch A 2026",
         stateCode: payload.location || "N/A",
         parentName: payload.parentName || "N/A",
@@ -1230,8 +1290,8 @@ app.post("/api/email/trigger", async (req, res) => {
         experienceArea: payload.experienceArea || payload.aspiration || "General Self Advocacy",
         industry: payload.industry || "General",
         aspiration: payload.aspiration || "Mentorship & Growth",
-        department: payload.department || payload.volunteerTrack || "Editorial Creator",
-        availableHours: payload.availableHours || payload.commitmentHours || "5-10 hours/week",
+        department: payload.department || payload.primaryRole || payload.volunteerTrack || "Internship & Volunteer Team",
+        availableHours: payload.availableHours || payload.commitmentHours || "Flexible",
         organization: payload.organizationName || payload.organization || "Private Entity",
         partnershipType: payload.partnershipType || "Corporate Ally",
       };
@@ -1315,7 +1375,14 @@ app.post("/api/email/trigger", async (req, res) => {
         });
       }
 
-      return res.json({ success: true, message: `Applicant confirmation dispatched and Admin Team [${adminTargetName}] notified successfully.` });
+      return res.json({
+        success: appMail.success,
+        simulated: !!appMail.simulated,
+        messageId: appMail.messageId,
+        whatsappLink: resolvedWhatsappLink,
+        whatsappSupportLink: resolvedWhatsappLink,
+        message: `Applicant confirmation dispatched and Admin Team [${adminTargetName}] notified successfully.`
+      });
     }
 
     if (event === "PAYMENT_SUBMITTED") {

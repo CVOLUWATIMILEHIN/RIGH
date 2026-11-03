@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Mail, User, Save, ListFilter, AlertCircle, FileText } from "lucide-react";
+import { Mail, User, Save, AlertCircle, FileText, Send, CheckCircle2 } from "lucide-react";
 import { getEmailSettings, saveEmailSettings, EmailSettings } from "../lib/db";
 
 interface AdminEmailSettingsProps {
@@ -10,6 +10,7 @@ interface AdminEmailSettingsProps {
 type TemplateKey =
   | "ciiWelcome"
   | "rmaWelcome"
+  | "volunteerWelcome"
   | "adminNotification"
   | "paymentSubmitted"
   | "paymentApproved"
@@ -25,12 +26,26 @@ export const AdminEmailSettings: React.FC<AdminEmailSettingsProps> = ({
   const [saving, setSaving] = useState<boolean>(false);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateKey>("ciiWelcome");
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [testEmailInput, setTestEmailInput] = useState<string>("olosundelouis@gmail.com");
+  const [sendingTest, setSendingTest] = useState<boolean>(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    simulated?: boolean;
+    hasResendKey?: boolean;
+    senderEmail?: string;
+    sandboxRedirectTo?: string | null;
+    messageId?: string | null;
+    error?: string | null;
+  } | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
         const data = await getEmailSettings();
         setSettings(data);
+        if (data?.notificationEmail) {
+          setTestEmailInput(data.notificationEmail);
+        }
       } catch (err) {
         console.error("Error fetching email settings:", err);
       } finally {
@@ -39,6 +54,36 @@ export const AdminEmailSettings: React.FC<AdminEmailSettingsProps> = ({
     }
     load();
   }, []);
+
+  const handleSendTestEmail = async () => {
+    if (!testEmailInput.trim()) return;
+    setSendingTest(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/email/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "TEST_EMAIL_DISPATCH",
+          payload: { email: testEmailInput.trim() }
+        })
+      });
+      const data = await res.json();
+      setTestResult(data);
+      if (data.success) {
+        onLogAction(`✅ [EMAIL TEST] Diagnostic test email dispatched to ${testEmailInput.trim()} (Ref: ${data.messageId || "OK"})`);
+      } else {
+        onLogAction(`❌ [EMAIL TEST] Diagnostic test failed: ${data.error || "Unknown error"}`);
+      }
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        error: err?.message || "Failed to connect to /api/email/trigger"
+      });
+    } finally {
+      setSendingTest(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!settings || !hasWriteAccess) return;
@@ -98,12 +143,17 @@ export const AdminEmailSettings: React.FC<AdminEmailSettingsProps> = ({
     ciiWelcome: {
       name: "CII Welcome Confirmation",
       desc: "Sent to applicant instantly upon successfully submitting a Corper Impact Initiative form.",
-      vars: ["{{fullName}}", "{{referenceNumber}}", "{{programName}}", "{{submissionDate}}"],
+      vars: ["{{fullName}}", "{{referenceNumber}}", "{{programName}}", "{{submissionDate}}", "{{whatsappLink}}"],
     },
     rmaWelcome: {
       name: "RMA Welcome Confirmation",
       desc: "Sent to applicant instantly upon successfully submitting a Right Minds Africa form.",
-      vars: ["{{fullName}}", "{{referenceNumber}}", "{{programName}}", "{{submissionDate}}"],
+      vars: ["{{fullName}}", "{{referenceNumber}}", "{{programName}}", "{{submissionDate}}", "{{whatsappLink}}"],
+    },
+    volunteerWelcome: {
+      name: "Internship / Volunteer Confirmation",
+      desc: "Sent to applicants after filling the Internship / Volunteer application form, including the official WhatsApp group link.",
+      vars: ["{{fullName}}", "{{referenceNumber}}", "{{department}}", "{{stateCode}}", "{{submissionDate}}", "{{whatsappLink}}"],
     },
     adminNotification: {
       name: "Admin Registration Notification",
@@ -297,6 +347,79 @@ export const AdminEmailSettings: React.FC<AdminEmailSettingsProps> = ({
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Live Email API Diagnostic & Test Dispatch Card */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-150 space-y-4 text-left">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider flex items-center gap-2">
+              <Send size={15} className="text-[#103D2E]" />
+              Live Auto Email API Test & Diagnostics
+            </h3>
+            <p className="text-2xs text-slate-400 font-medium mt-0.5">
+              Verify end-to-end delivery of your automated confirmation & Internship WhatsApp link email pipeline.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+          <input
+            type="email"
+            value={testEmailInput}
+            onChange={(e) => setTestEmailInput(e.target.value)}
+            placeholder="Enter recipient email to test (e.g. olosundelouis@gmail.com)"
+            className="flex-1 px-3.5 py-2.5 bg-slate-50 focus:bg-white border border-slate-200 focus:border-slate-400 rounded-xl text-xs font-medium transition-all"
+          />
+          <button
+            type="button"
+            onClick={handleSendTestEmail}
+            disabled={sendingTest || !testEmailInput.trim()}
+            className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 text-white rounded-xl text-2xs font-extrabold uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+          >
+            <Send size={13} />
+            {sendingTest ? "DISPATCHING TEST..." : "Send Live Test Email"}
+          </button>
+        </div>
+
+        {testResult && (
+          <div
+            className={`p-4 rounded-xl border text-xs space-y-1.5 ${
+              testResult.success
+                ? "bg-emerald-50/80 border-emerald-200 text-emerald-950"
+                : "bg-red-50 border-red-200 text-red-900"
+            }`}
+          >
+            <div className="flex items-center gap-2 font-black uppercase tracking-wider text-2xs">
+              {testResult.success ? (
+                <>
+                  <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                  <span>
+                    {testResult.simulated
+                      ? "API Reachable (Simulation Mode – RESEND_API_KEY not set in environment)"
+                      : "Live Resend Email Dispatched Successfully!"}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={15} className="text-red-600 shrink-0" />
+                  <span>Email Dispatch Failed: {testResult.error}</span>
+                </>
+              )}
+            </div>
+            {testResult.success && (
+              <div className="text-[11px] font-mono space-y-0.5 text-slate-700 pt-1">
+                <div>• Message Reference ID: <strong>{testResult.messageId || "N/A"}</strong></div>
+                <div>• Active Sender Address: <strong>{testResult.senderEmail || "onboarding@resend.dev"}</strong></div>
+                {testResult.sandboxRedirectTo && (
+                  <div className="text-amber-800 font-sans pt-1">
+                    Note: Resend is using the sandbox sender (<code>onboarding@resend.dev</code>), so this email was delivered to your verified Resend owner inbox (<strong>{testResult.sandboxRedirectTo}</strong>). Once you verify your custom domain in Resend and set <code>SENDER_EMAIL</code> in Vercel Environment Variables, emails go directly to any external recipient.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Control Actions Bar */}

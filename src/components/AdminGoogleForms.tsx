@@ -28,6 +28,8 @@ import { getFirebaseAuth, getFirestoreDb, getPortalApplications, PortalApplicati
 import { signInWithPopup, GoogleAuthProvider, User } from "firebase/auth";
 
 const DEFAULT_VOLUNTEER_GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScq8FZgaFF_hYxLbKk0eLjLwuMW1iYRPjZpYfMljdQ3k_oCHQ/viewform?embedded=true";
+const DEFAULT_VOLUNTEER_WHATSAPP_URL = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
+const LEGACY_VOLUNTEER_WHATSAPP_URL = "https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC";
 const CONNECTED_GOOGLE_EMAIL = "olosundelouis@gmail.com";
 
 // Module level in-memory token cache (retained during SPA navigation but cleared on full refresh)
@@ -134,6 +136,14 @@ export default function AdminGoogleForms({ hasWriteAccess, onLogAction }: AdminG
     return DEFAULT_VOLUNTEER_GOOGLE_FORM_URL;
   });
   const [customVolunteerUrlInput, setCustomVolunteerUrlInput] = useState<string>(volunteerFormUrl);
+  const [volunteerWhatsappUrl, setVolunteerWhatsappUrl] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("rma_volunteer_whatsapp_url");
+      if (saved && saved.startsWith("http") && saved !== LEGACY_VOLUNTEER_WHATSAPP_URL) return saved;
+    }
+    return DEFAULT_VOLUNTEER_WHATSAPP_URL;
+  });
+  const [customWhatsappUrlInput, setCustomWhatsappUrlInput] = useState<string>(volunteerWhatsappUrl);
   const [isVolunteerFullScreen, setIsVolunteerFullScreen] = useState(false);
   const [volunteerApplications, setVolunteerApplications] = useState<PortalApplication[]>([]);
 
@@ -201,6 +211,29 @@ export default function AdminGoogleForms({ hasWriteAccess, onLogAction }: AdminG
       onLogAction(`🔗 [VOLUNTEER FORM] Updated Volunteer Google Form URL in backend settings.`);
     } catch (err) {
       console.warn("Could not save volunteerFormUrl to Firestore:", err);
+    }
+  };
+
+  const handleSaveVolunteerWhatsappUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customWhatsappUrlInput.trim()) return;
+    const clean = customWhatsappUrlInput.trim();
+    setVolunteerWhatsappUrl(clean);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rma_volunteer_whatsapp_url", clean);
+      window.dispatchEvent(new Event("rma_volunteer_form_config_updated"));
+    }
+    try {
+      const { doc, setDoc } = await import("firebase/firestore");
+      const db = await getFirestoreDb();
+      await setDoc(doc(db, "settings", "google_forms"), {
+        volunteerWhatsappUrl: clean,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      setFeedback({ text: "Official Internship/Volunteer WhatsApp link updated and synced!", type: "success" });
+      onLogAction(`💬 [WHATSAPP LINK] Updated Internship/Volunteer WhatsApp Community URL to ${clean}`);
+    } catch (err) {
+      console.warn("Could not save volunteerWhatsappUrl to Firestore:", err);
     }
   };
 
@@ -279,6 +312,17 @@ export default function AdminGoogleForms({ hasWriteAccess, onLogAction }: AdminG
           if (data.volunteerFormUrl && !data.volunteerFormUrl.includes("1FAIpQLScXg5V3NqYqP_RMA_Volunteer_Intake")) {
             setVolunteerFormUrl(data.volunteerFormUrl);
             setCustomVolunteerUrlInput(data.volunteerFormUrl);
+          }
+          if (
+            data.volunteerWhatsappUrl &&
+            data.volunteerWhatsappUrl.startsWith("http") &&
+            data.volunteerWhatsappUrl !== LEGACY_VOLUNTEER_WHATSAPP_URL
+          ) {
+            setVolunteerWhatsappUrl(data.volunteerWhatsappUrl);
+            setCustomWhatsappUrlInput(data.volunteerWhatsappUrl);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("rma_volunteer_whatsapp_url", data.volunteerWhatsappUrl);
+            }
           }
         }
       } catch (err) {
@@ -713,24 +757,46 @@ export default function AdminGoogleForms({ hasWriteAccess, onLogAction }: AdminG
         </div>
 
         {/* Google Form URL Configuration Row */}
-        <form onSubmit={handleSaveVolunteerFormUrl} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2">
-            <Settings size={14} className="text-slate-400 shrink-0" />
-            <input
-              type="text"
-              value={customVolunteerUrlInput}
-              onChange={(e) => setCustomVolunteerUrlInput(e.target.value)}
-              placeholder="Paste Google Form URL or embed link..."
-              className="w-full bg-transparent text-xs font-mono text-slate-700 outline-none"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2 bg-[#103D2E] hover:bg-[#0b2b20] text-amber-300 text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer transition-all shrink-0"
-          >
-            Save Form URL
-          </button>
-        </form>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <form onSubmit={handleSaveVolunteerFormUrl} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2">
+              <Settings size={14} className="text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={customVolunteerUrlInput}
+                onChange={(e) => setCustomVolunteerUrlInput(e.target.value)}
+                placeholder="Paste Google Form URL or embed link..."
+                className="w-full bg-transparent text-xs font-mono text-slate-700 outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-[#103D2E] hover:bg-[#0b2b20] text-amber-300 text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer transition-all shrink-0"
+            >
+              Save Form URL
+            </button>
+          </form>
+
+          {/* Official WhatsApp Group Link Configuration Row */}
+          <form onSubmit={handleSaveVolunteerWhatsappUrl} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="flex-1 flex items-center gap-2 bg-emerald-50/50 border border-emerald-200 rounded-xl px-3.5 py-2">
+              <Link2 size={14} className="text-emerald-600 shrink-0" />
+              <input
+                type="url"
+                value={customWhatsappUrlInput}
+                onChange={(e) => setCustomWhatsappUrlInput(e.target.value)}
+                placeholder="Official WhatsApp Group Invite Link..."
+                className="w-full bg-transparent text-xs font-mono text-slate-700 outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer transition-all shrink-0"
+            >
+              Save WhatsApp Link
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* Fullscreen Google Form Modal for Admin */}

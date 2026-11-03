@@ -180,6 +180,21 @@ export default function InvolvedViews({ subView, onNavigate, onOpenJoin }: Invol
         options.university = university;
       }
 
+      await saveRegistration({
+        fullName: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim() || "N/A",
+        location: location.trim() || "Nigeria",
+        profileType: selectedChannel === "volunteer" || selectedChannel === "internship" ? "volunteer" : "partner",
+        programType: selectedChannel === "volunteer" || selectedChannel === "internship" ? "internship" : selectedChannel,
+        programName: `${selectedChannel.toUpperCase()} Application`,
+        department: volunteerTrack,
+        primaryRole: volunteerTrack,
+        availableHours: commitmentHours,
+        whatsappLink: "https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC",
+        notes: interestReason
+      });
+
       await savePortalApplication({
         fullName,
         email,
@@ -191,7 +206,7 @@ export default function InvolvedViews({ subView, onNavigate, onOpenJoin }: Invol
         options
       });
 
-      setSuccess(`Application successfully transmitted! Reference logged under Email: ${email}. Monitor status changes above using the Live status tracking tab!`);
+      setSuccess(`Application successfully transmitted! A confirmation email with our official WhatsApp community link has been sent to ${email}.`);
       
       setFullName("");
       setEmail("");
@@ -801,8 +816,19 @@ export default function InvolvedViews({ subView, onNavigate, onOpenJoin }: Invol
             </p>
 
             {success ? (
-              <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl">
-                {success}
+              <div className="p-5 bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs rounded-2xl space-y-4">
+                <p className="font-semibold leading-relaxed">{success}</p>
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <a
+                    href="https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2.5 bg-[#25D366] hover:bg-[#20ba56] text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider inline-flex items-center gap-2 shadow-xs"
+                  >
+                    <span>Join Official WhatsApp Community</span>
+                    <ExternalLink size={13} />
+                  </a>
+                </div>
               </div>
             ) : (
               <form onSubmit={handleFormSubmit} className="space-y-4 animate-fadeIn">
