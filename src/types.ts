@@ -105,17 +105,17 @@ export const INITIATIVES: Initiative[] = [
   },
   {
     id: "g3",
-    title: "G3 series (God Growth Goals)",
-    badge: "Annual December Campaign",
-    description: "Our high-intensity, 5-weekend spiritual capacity, upskilling, and goal-mapping ecosystem running across Saturdays in December and the first Saturday in January.",
+    title: "G3 Series 2026/2027 (God • Growth • Goals)",
+    badge: "The Relevance Question",
+    description: "The Human Advantage: Who Will You Become in a Changing World? Our annual 5-Saturday developmental programme across December and the first Saturday of January exploring Identity, Skills, Adaptability, Relationships, and Intentional Execution through God, Growth, and Goals.",
     objectives: [
-      "Deep spiritual grounding & sovereign character building",
-      "Advanced upskilling roadmap & high-income digital systems",
-      "Constructing 12-month goals execution trackers",
-      "Onboarding into active peer mastermind covenant groups"
+      "Identity, self-awareness & personal responsibility",
+      "Skills acquisition, capacity building & continuous value creation",
+      "Adaptability, innovation & navigating AI and a changing world",
+      "Intentional relationships, mental well-being & 2027 goal execution"
     ],
     beneficiaries: "Ambitious Youth & Purpose-driven Professionals",
-    stats: "850+ Covenant Fellows Graduated",
+    stats: "5 Progressive Saturdays (Dec & Jan 2)",
     color: "brand-orange"
   },
   {

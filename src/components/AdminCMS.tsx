@@ -318,12 +318,12 @@ const DEFAULT_SLIDES: HeroSlide[] = [
   {
     id: "slide-6",
     imageUrl: "conference",
-    caption: "G3 Series (God Growth Goals)",
-    badge: "WHAT WE DO • ANNUAL DECEMBER CAMPAIGN",
-    headline: "Align Your Spirit, Skills, and Goals",
-    description: "Our premier 5-weekend year-end mastermind cohort running throughout December. Consolidate your spiritual grounding, design your 12-month goals tracker, and find your lifetime accountability circle.",
-    primaryButtonText: "Apply for Fellowship",
-    primaryButtonAction: "student",
+    caption: "G3 Series 2026/2027 (God • Growth • Goals)",
+    badge: "WHAT WE DO • G3 SERIES 2026/2027 — THE RELEVANCE QUESTION",
+    headline: "The Human Advantage: Who Will You Become in a Changing World?",
+    description: "Our annual 5-Saturday developmental programme every Saturday in December 2026 and January 2, 2027—exploring Identity, Skills, Adaptability, Relationships, and Execution through God, Growth, and Goals.",
+    primaryButtonText: "Explore G3 Series",
+    primaryButtonAction: "initiatives-g3",
     secondaryButtonText: "View Gallery",
     secondaryButtonAction: "gallery",
     enabled: true,
@@ -331,10 +331,10 @@ const DEFAULT_SLIDES: HeroSlide[] = [
     duration: 8,
     overlayOpacity: 40,
     showEventCard: true,
-    eventCardTitle: "December Campaign",
-    eventCardName: "G3 Mastermind Fellowship",
-    eventCardDate: "Saturdays in December",
-    eventCardLocation: "RMA Chapters & Zoom"
+    eventCardTitle: "G3 Series 2026/2027",
+    eventCardName: "The Relevance Question",
+    eventCardDate: "Saturdays in Dec & Jan 2",
+    eventCardLocation: "Right-Minds Africa Hub"
   }
 ];
 

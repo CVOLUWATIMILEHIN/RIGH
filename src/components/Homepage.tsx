@@ -353,17 +353,17 @@ export default function Homepage({ onOpenJoin, onNavigate }: HomepageProps) {
             <div className="space-y-2 max-w-2xl">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-md bg-brand-orange/10 text-brand-orange text-[10px] font-bold uppercase tracking-wider font-mono border border-brand-orange/20">
-                  Flagship 5-Saturday Fellowship
+                  G3 SERIES 2026/2027 • THE RELEVANCE QUESTION
                 </span>
                 <span className="text-xs font-mono font-semibold text-slate-500">
-                  Dec 5, 2026 – Jan 2, 2027 • 100% Free & Virtual
+                  Every Saturday in Dec 2026 &amp; Jan 2, 2027 • God. Growth. Goals.
                 </span>
               </div>
               <h3 className="text-lg sm:text-xl font-extrabold text-brand-blue font-display tracking-tight">
-                The G3 Series: God &bull; Growth &bull; Goals
+                The Human Advantage: Who Will You Become in a Changing World?
               </h3>
               <p className="text-sm text-slate-600 leading-relaxed">
-                Close 2026 with clarity and enter 2027 with a written personal execution system across spiritual alignment, mindset mastery, and 90-day goal engineering.
+                Five progressive Saturday conversations exploring Identity, Skills &amp; Value Creation, Adaptability &amp; AI, Relationships &amp; Influence, and Intentional Living &amp; Execution—through the three interconnected dimensions of God, Growth, and Goals.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -371,7 +371,7 @@ export default function Homepage({ onOpenJoin, onNavigate }: HomepageProps) {
                 onClick={() => onNavigate("initiatives-g3")}
                 className="px-6 py-3 bg-brand-orange hover:bg-brand-orange/90 text-white text-xs font-bold rounded-xl uppercase tracking-wider transition-all cursor-pointer font-mono inline-flex items-center gap-2 shadow-sm"
               >
-                Explore G3 Fellowship <ArrowRight size={14} />
+                Explore G3 Series 2026/2027 <ArrowRight size={14} />
               </button>
             </div>
           </div>

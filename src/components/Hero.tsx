@@ -159,12 +159,13 @@ export default function Hero({ onOpenJoin, onNavigate }: HeroProps) {
       }
     } else if (["corps_member", "student", "teen", "young-leaders", "mentor"].includes(action)) {
       onOpenJoin(action);
-    } else if (action === "courses" || action === "programs-seminar" || action === "about" || action === "gallery" || action === "initiatives-cii" || action === "programs-reinvention") {
+    } else if (action === "courses" || action === "programs-seminar" || action === "about" || action === "gallery" || action === "initiatives-cii" || action === "initiatives-g3" || action === "programs-reinvention") {
       if (onNavigate) {
         onNavigate(action);
       } else {
         const idMap: Record<string, string> = {
           "initiatives-cii": "#cii-section",
+          "initiatives-g3": "#program-preview-section",
           "programs-seminar": "#programs",
           "about": "#about-section"
         };
