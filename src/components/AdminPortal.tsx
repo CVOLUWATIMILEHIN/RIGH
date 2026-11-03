@@ -66,7 +66,8 @@ import {
   authenticateOperatorAccount,
   AdminOperatorRecord,
   ANCHOR_SUPER_ADMIN_EMAILS,
-  getPortalApplications
+  getPortalApplications,
+  getAdminWelcomeName
 } from "../lib/db";
 
 import AdminTerminal from "./AdminTerminal";
@@ -971,7 +972,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         localStorage.setItem("rma_backend_access_logs", JSON.stringify(updatedLogs));
       }
 
-      showFeedback(`Welcome back, ${matchedUser.fullName || matchedUser.username}!`, "success");
+      showFeedback(`Welcome back, ${getAdminWelcomeName(matchedUser.username, matchedUser.fullName)}!`, "success");
       addTerminalLog(`🛡️ [SECURITY] Portal unlocked via Cryptographic Session. Operator: ${matchedUser.username} [${resolvedRole}].`);
 
       saveAuditLog({
@@ -1242,7 +1243,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         window.dispatchEvent(new Event("rma_admin_session_changed"));
       }
 
-      showFeedback(`Welcome back, ${cleanEmail}!`, "success");
+      showFeedback(`Welcome back, ${getAdminWelcomeName(cleanEmail, user.displayName || matchedUser.fullName)}!`, "success");
       addTerminalLog(`🛡️ [SECURITY] Portal unlocked via Google Firebase Auth. Session: ${cleanEmail} [${resolvedRole}].`);
 
       saveAuditLog({
@@ -2671,6 +2672,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         isSuperAdmin={isSuperAdmin}
         hasWriteAccess={hasWriteAccess}
         currentEmail={currentEmail}
+        currentAdminName={currentAdminUser?.fullName}
         userRole={userRole}
         allowedTabs={effectiveAllowedTabs}
         onSignOut={handleSignOut}
@@ -2687,6 +2689,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
           activeTab={activeTab}
           isSuperAdmin={isSuperAdmin}
           currentEmail={currentEmail}
+          currentAdminName={currentAdminUser?.fullName}
           onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           onQuickCreateMember={() => {
             setQuickCreateModalTab("member");
@@ -2889,6 +2892,8 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
                 registrations={registrations}
                 visitorCheckins={visitorCheckins}
                 isSuperAdmin={isSuperAdmin}
+                currentEmail={currentEmail}
+                currentAdminName={currentAdminUser?.fullName}
                 onNavigateTab={setActiveTab}
                 onQuickCreateMember={() => {
                   setQuickCreateModalTab("member");

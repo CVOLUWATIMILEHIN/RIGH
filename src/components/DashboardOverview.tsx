@@ -18,7 +18,7 @@ import {
   Download,
   FileText
 } from "lucide-react";
-import { Registration, VisitorCheckIn } from "../lib/db";
+import { Registration, VisitorCheckIn, getAdminWelcomeName } from "../lib/db";
 import AdminAnalytics from "./AdminAnalytics";
 import { SYSTEM_PRD_DOCUMENT } from "../lib/prd";
 
@@ -26,6 +26,8 @@ interface DashboardOverviewProps {
   registrations: Registration[];
   visitorCheckins: VisitorCheckIn[];
   isSuperAdmin: boolean;
+  currentEmail?: string;
+  currentAdminName?: string;
   onNavigateTab: (tab: "dashboard" | "reg-cii" | "reg-rma" | "visitors-live" | "visitors-analytics" | "user-management" | "security" | "activity" | "settings" | "prd-doc") => void;
   onQuickCreateMember: () => void;
   onQuickCreateAnnouncement: () => void;
@@ -38,6 +40,8 @@ export default function DashboardOverview({
   registrations,
   visitorCheckins,
   isSuperAdmin,
+  currentEmail,
+  currentAdminName,
   onNavigateTab,
   onQuickCreateMember,
   onQuickCreateAnnouncement,
@@ -45,6 +49,8 @@ export default function DashboardOverview({
   pendingSyncCount,
   failedSubmissionsCount
 }: DashboardOverviewProps) {
+  const welcomeName = getAdminWelcomeName(currentEmail, currentAdminName);
+  const emailUsername = currentEmail ? currentEmail.split("@")[0] : "";
   
   // Totals calculations
   const totalCount = registrations.length;
@@ -124,12 +130,19 @@ export default function DashboardOverview({
       <div className="bg-[#0A1A14] bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#133F31] via-[#0A1A14] to-[#040C0A] text-white p-6 sm:p-8 rounded-[2rem] border border-[#152e25] relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-xl shadow-emerald-990/5">
         <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-700/10 rounded-full blur-[80px] pointer-events-none" />
         <div className="space-y-2 text-left relative z-10 max-w-xl">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-400/10 text-amber-300 rounded-full border border-amber-400/20 text-[10px] font-black tracking-widest uppercase">
-            <Sparkles size={10} className="text-amber-400" />
-            ADMIN EXECUTIVE CENTRE
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-400/10 text-amber-300 rounded-full border border-amber-400/20 text-[10px] font-black tracking-widest uppercase">
+              <Sparkles size={10} className="text-amber-400" />
+              ADMIN EXECUTIVE CENTRE
+            </div>
+            {emailUsername && (
+              <span className="inline-flex items-center px-2.5 py-0.5 bg-white/10 text-emerald-300 rounded-full border border-white/10 text-[10px] font-mono font-bold">
+                {emailUsername}
+              </span>
+            )}
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight font-display text-slate-100">
-            Welcome back, Olosunde.
+            Welcome back, {welcomeName}.
           </h2>
           <p className="text-xs text-slate-400 font-medium leading-relaxed">
             Here is your live operations overview for today. Real-time registries stream synchronization is active, allowing you to manage candidate credentials, review dossiers, inspect check-ins, and authorize permissions.

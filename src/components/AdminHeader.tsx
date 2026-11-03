@@ -12,11 +12,13 @@ import {
   RefreshCw,
   Lock
 } from "lucide-react";
+import { getAdminWelcomeName } from "../lib/db";
 
 interface AdminHeaderProps {
   activeTab: string;
   isSuperAdmin: boolean;
   currentEmail: string;
+  currentAdminName?: string;
   onOpenMobileSidebar: () => void;
   onQuickCreateMember: () => void;
   onQuickCreateEvent: () => void;
@@ -31,6 +33,7 @@ export default function AdminHeader({
   activeTab,
   isSuperAdmin,
   currentEmail,
+  currentAdminName,
   onOpenMobileSidebar,
   onQuickCreateMember,
   onQuickCreateEvent,
@@ -287,13 +290,16 @@ export default function AdminHeader({
         </div>
 
         {/* Compact Admin Badge */}
-        <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl">
+        <div
+          className="hidden lg:flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl"
+          title={currentEmail ? `Logged in as ${currentEmail}` : "Right Minds Africa"}
+        >
           <span className="relative flex h-2 w-2 select-none">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2ECC71]"></span>
           </span>
-          <span className="text-[10px] font-mono font-bold tracking-tight text-slate-500 truncate max-w-[120px]">
-            {currentEmail.split("@")[0]}
+          <span className="text-[10px] font-mono font-bold tracking-tight text-slate-700 truncate max-w-[160px]">
+            {getAdminWelcomeName(currentEmail, currentAdminName)}
           </span>
         </div>
 

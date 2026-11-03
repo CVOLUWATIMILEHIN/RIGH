@@ -25,6 +25,7 @@ import {
   Layers
 } from "lucide-react";
 import { useBrandConfig } from "../lib/brandConfig";
+import { getAdminWelcomeName } from "../lib/db";
 
 export type AdminTabType = 
   | "dashboard" 
@@ -397,6 +398,7 @@ interface AdminSidebarProps {
   isSuperAdmin: boolean;
   hasWriteAccess: boolean;
   currentEmail: string;
+  currentAdminName?: string;
   userRole: string;
   allowedTabs?: AdminTabType[];
   onSignOut: () => void;
@@ -411,6 +413,7 @@ export default function AdminSidebar({
   isSuperAdmin,
   hasWriteAccess,
   currentEmail,
+  currentAdminName,
   userRole,
   allowedTabs,
   onSignOut,
@@ -419,6 +422,7 @@ export default function AdminSidebar({
   onCloseMobile
 }: AdminSidebarProps) {
   const { brand } = useBrandConfig();
+  const displayAdminName = getAdminWelcomeName(currentEmail, currentAdminName);
 
   const effectiveAllowedTabs = isSuperAdmin
     ? null
@@ -531,22 +535,20 @@ export default function AdminSidebar({
         <div className="p-4 border-t border-[#143127] bg-[#07130F]">
           <div className="flex items-center gap-3 mb-3 text-left">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 select-none ${isSuperAdmin ? "bg-amber-400 text-[#07130F]" : "bg-[#103D2E] text-slate-200"}`}>
-              {currentEmail ? currentEmail.slice(0, 2).toUpperCase() : "OP"}
+              {displayAdminName ? displayAdminName.slice(0, 2).toUpperCase() : "RM"}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <p className="text-[10px] font-black uppercase text-slate-200 truncate leading-none">
-                  {currentEmail === "olosundelouis@gmail.com" ? "System Owner (Super Admin)" : isSuperAdmin ? "Super Admin" : `${userRole} (Limited)`}
+                <p className="text-[10px] font-black uppercase text-slate-200 truncate leading-none" title={displayAdminName}>
+                  {displayAdminName}
                 </p>
               </div>
-              <p className="text-[9.5px] font-mono text-slate-400 truncate mt-0.5 leading-tight">
+              <p className="text-[9.5px] font-mono text-slate-400 truncate mt-0.5 leading-tight" title={currentEmail}>
                 {currentEmail}
               </p>
-              {!isSuperAdmin && (
-                <span className="inline-block mt-1 text-[8px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-                  {hasWriteAccess ? "Read & Write" : "View Only"}
-                </span>
-              )}
+              <span className="inline-block mt-1 text-[8px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                {isSuperAdmin ? "Super Admin" : hasWriteAccess ? "Read & Write" : "View Only"}
+              </span>
             </div>
           </div>
           

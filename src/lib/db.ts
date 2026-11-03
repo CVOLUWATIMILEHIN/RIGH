@@ -1505,10 +1505,62 @@ export const ANCHOR_SUPER_ADMIN_EMAILS = [
   "olosundelouis@gmail.com"
 ];
 
+export function getAdminWelcomeName(email?: string, fullName?: string): string {
+  const cleanEmail = (email || "").trim().toLowerCase();
+  if (
+    !cleanEmail ||
+    cleanEmail === "rightmindsafrica@gmail.com" ||
+    cleanEmail === "olosundelouis@gmail.com" ||
+    cleanEmail.startsWith("rightminds") ||
+    cleanEmail.includes("@rightmindsafrica")
+  ) {
+    return "Right Minds Africa";
+  }
+
+  const emailNamePart = cleanEmail.split("@")[0] || "Right Minds Africa";
+
+  if (
+    cleanEmail === "corpersimpactinitiative@gmail.com" ||
+    emailNamePart === "corpersimpactinitiative"
+  ) {
+    return "Corpers Impact Initiative";
+  }
+
+  const genericNames = new Set([
+    "admin",
+    "super admin",
+    "system owner",
+    "system owner (super admin)",
+    "right minds africa admin",
+    "right minds africa",
+    "corper impact initiative admin",
+    "corpers impact initiative admin",
+    "public user",
+    "viewer",
+    "viewer (read only)",
+    "editor"
+  ]);
+  const trimmedFull = (fullName || "").trim();
+  if (
+    trimmedFull &&
+    !genericNames.has(trimmedFull.toLowerCase()) &&
+    !trimmedFull.includes("@")
+  ) {
+    return trimmedFull;
+  }
+
+  const formattedFromEmail = emailNamePart
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim();
+
+  return formattedFromEmail || emailNamePart || "Right Minds Africa";
+}
+
 const DEFAULT_EDITABLE_ADMIN_OPERATORS: AdminOperatorRecord[] = [
   {
     email: "rightmindsafrica@gmail.com",
-    fullName: "Right Minds Africa Admin",
+    fullName: "Right Minds Africa",
     role: "Admin",
     allowedTabs: [
       "dashboard",
@@ -1545,7 +1597,7 @@ const DEFAULT_EDITABLE_ADMIN_OPERATORS: AdminOperatorRecord[] = [
   },
   {
     email: "corpersimpactinitiative@gmail.com",
-    fullName: "Corper Impact Initiative Admin",
+    fullName: "Corpers Impact Initiative",
     role: "Admin",
     allowedTabs: [
       "dashboard",

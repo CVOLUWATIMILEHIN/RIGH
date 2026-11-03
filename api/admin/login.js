@@ -119,6 +119,7 @@ export default async function handler(req, res) {
     let matchedRole = null;
     let matchedAllowedTabs = undefined;
     let matchedCanWrite = undefined;
+    let matchedFullName = undefined;
 
     // 1. Check Firestore admins collection first so custom/provisioned admin credentials work on Vercel
     const db = getServerFirestore();
@@ -131,6 +132,10 @@ export default async function handler(req, res) {
             return res.status(403).json({
               error: "Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin)."
             });
+          }
+
+          if (data?.fullName) {
+            matchedFullName = data.fullName;
           }
 
           const candidateDigest = crypto
@@ -182,6 +187,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       email: rawEmail,
+      fullName: matchedFullName,
       role: matchedRole,
       allowedTabs: matchedAllowedTabs,
       canWrite: matchedCanWrite,
@@ -189,6 +195,7 @@ export default async function handler(req, res) {
       expiresAt,
       user: {
         username: rawEmail,
+        fullName: matchedFullName,
         role: matchedRole,
         allowedTabs: matchedAllowedTabs,
         canWrite: matchedCanWrite,
