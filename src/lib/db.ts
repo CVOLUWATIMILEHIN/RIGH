@@ -1679,8 +1679,7 @@ export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
       const data = docSnap.data();
       const email = (data.email || docSnap.id || "").toLowerCase().trim();
       const isSovereignOwner = ANCHOR_SUPER_ADMIN_EMAILS.includes(email);
-      const hasPassword = Boolean(data.passwordDigest || data.passwordHash);
-      if (email && !deletedEmails.has(email) && (isSovereignOwner || hasPassword)) {
+      if (email && !deletedEmails.has(email)) {
         const normalizedRole = isSovereignOwner
           ? "Super Admin"
           : data.role === "Super Admin"
@@ -1693,7 +1692,7 @@ export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
           allowedTabs: Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined,
           canWrite: typeof data.canWrite === "boolean" ? data.canWrite : true,
           status: data.status || "Active",
-          passwordDigest: data.passwordDigest || (data.passwordHash ? "server-scrypt" : undefined),
+          passwordDigest: data.passwordDigest || (data.passwordHash ? "server-scrypt" : "firestore-provisioned"),
           createdBy: data.createdBy,
           createdAt: data.createdAt || new Date().toISOString(),
           updatedAt: data.updatedAt

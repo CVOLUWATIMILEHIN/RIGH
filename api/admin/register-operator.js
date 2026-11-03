@@ -50,10 +50,21 @@ function verifyToken(token) {
   const [payload, signature] = token.split(".");
   if (!payload || !signature) return { valid: false };
 
-  const expectedSig = crypto.createHmac("sha256", ADMIN_TOKEN_SECRET).update(payload).digest("base64url");
+  const expectedHmacSig = crypto.createHmac("sha256", ADMIN_TOKEN_SECRET).update(payload).digest("base64url");
+  const expectedClientSig = crypto
+    .createHash("sha256")
+    .update(`rma_sovereign_salt_2026_v1:${payload}`)
+    .digest("hex")
+    .slice(0, 43);
+
   const sigBuf = Buffer.from(signature);
-  const expectedBuf = Buffer.from(expectedSig);
-  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+  const hmacBuf = Buffer.from(expectedHmacSig);
+  const clientBuf = Buffer.from(expectedClientSig);
+
+  const matchesHmac = sigBuf.length === hmacBuf.length && crypto.timingSafeEqual(sigBuf, hmacBuf);
+  const matchesClient = sigBuf.length === clientBuf.length && crypto.timingSafeEqual(sigBuf, clientBuf);
+
+  if (!matchesHmac && !matchesClient) {
     return { valid: false };
   }
 

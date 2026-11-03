@@ -332,7 +332,14 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
     if (!currentAdminUser?.token || !currentAdminUser?.username) return;
     let cancelled = false;
 
-    // Immediately verify that the stored session email is actually an authorized Admin
+    if (currentAdminUser.expiresAt && currentAdminUser.expiresAt <= Date.now()) {
+      setCurrentAdminUser(null);
+      localStorage.removeItem("rma_current_logged_in_user");
+      window.dispatchEvent(new Event("rma_admin_session_changed"));
+      return;
+    }
+
+    // Verify that the stored session email is an authorized Admin created by Super Admin
     isAuthorizedAdminEmail(currentAdminUser.username)
       .then((check) => {
         if (cancelled) return;
@@ -360,10 +367,11 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         if (cancelled) return;
         if (res.status === 401) {
           const data = await res.json().catch(() => ({}));
-          if (data?.valid === false) {
+          if (data?.suspended === true) {
             setCurrentAdminUser(null);
             localStorage.removeItem("rma_current_logged_in_user");
             window.dispatchEvent(new Event("rma_admin_session_changed"));
+            setLoginError(data?.error || "Your administrator account has been suspended by the Super Admin.");
           }
         } else if (res.ok) {
           const data = await res.json().catch(() => ({}));
