@@ -1557,82 +1557,16 @@ export function getAdminWelcomeName(email?: string, fullName?: string): string {
   return formattedFromEmail || emailNamePart || "Right Minds Africa";
 }
 
-const DEFAULT_EDITABLE_ADMIN_OPERATORS: AdminOperatorRecord[] = [
-  {
-    email: "rightmindsafrica@gmail.com",
-    fullName: "Right Minds Africa",
-    role: "Admin",
-    allowedTabs: [
-      "dashboard",
-      "reg-cii",
-      "reg-rma",
-      "teen-bootcamp",
-      "payments",
-      "events",
-      "resources",
-      "gallery",
-      "website-popups",
-      "social-hub",
-      "google-forms",
-      "messages",
-      "testimonials",
-      "partners",
-      "lms-courses",
-      "lms-modules",
-      "lms-students",
-      "lms-payments",
-      "lms-enrollments",
-      "lms-certificates",
-      "lms-analytics",
-      "lms-payment-settings",
-      "visitors-live",
-      "notifications",
-      "visitors-analytics",
-      "live-chat"
-    ],
-    canWrite: true,
-    status: "Active",
-    createdBy: "olosundelouis@gmail.com",
-    createdAt: "2026-05-01T10:00:00.000Z"
-  },
-  {
-    email: "corpersimpactinitiative@gmail.com",
-    fullName: "Corpers Impact Initiative",
-    role: "Admin",
-    allowedTabs: [
-      "dashboard",
-      "reg-cii",
-      "reg-rma",
-      "teen-bootcamp",
-      "payments",
-      "events",
-      "resources",
-      "gallery",
-      "website-popups",
-      "social-hub",
-      "google-forms",
-      "messages",
-      "testimonials",
-      "partners",
-      "lms-courses",
-      "lms-modules",
-      "lms-students",
-      "lms-payments",
-      "lms-enrollments",
-      "lms-certificates",
-      "lms-analytics",
-      "lms-payment-settings",
-      "visitors-live",
-      "notifications",
-      "visitors-analytics",
-      "live-chat"
-    ],
-    canWrite: true,
-    status: "Active",
-    createdBy: "olosundelouis@gmail.com",
-    createdAt: "2026-05-01T10:05:00.000Z"
-  }
-];
+const DEFAULT_EDITABLE_ADMIN_OPERATORS: AdminOperatorRecord[] = [];
+const LEGACY_PRE_SEEDED_MOCK_IDS = new Set([
+  "usr-admin-rightmindsafrica",
+  "usr-admin-corpersimpactinitiative",
+  "usr-1",
+  "usr-2",
+  "usr-3",
+  "usr-4"
+]);
+
 
 function getDeletedAdminOperatorEmailsLocal(): string[] {
   if (typeof window === "undefined") return [];
@@ -1715,18 +1649,12 @@ export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
     } catch {}
   }
 
-  // Ensure default editable admins (rightmindsafrica@gmail.com, corpersimpactinitiative@gmail.com) are present unless deleted
   const map = new Map<string, AdminOperatorRecord>();
-  for (const seedOp of DEFAULT_EDITABLE_ADMIN_OPERATORS) {
-    const emailKey = seedOp.email.toLowerCase();
-    if (!deletedEmails.has(emailKey)) {
-      map.set(emailKey, { ...seedOp });
-    }
-  }
   for (const item of list) {
     const emailKey = (item.email || "").toLowerCase().trim();
-    if (emailKey && !deletedEmails.has(emailKey)) {
-      const isSovereignOwner = ANCHOR_SUPER_ADMIN_EMAILS.includes(emailKey);
+    const isSovereignOwner = ANCHOR_SUPER_ADMIN_EMAILS.includes(emailKey);
+    // Only keep non-Super-Admin operators that were explicitly created with a passwordDigest
+    if (emailKey && !deletedEmails.has(emailKey) && (isSovereignOwner || Boolean(item.passwordDigest))) {
       const normalizedRole = isSovereignOwner
         ? "Super Admin"
         : item.role === "Super Admin"
@@ -1750,8 +1678,9 @@ export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
     snap.forEach((docSnap) => {
       const data = docSnap.data();
       const email = (data.email || docSnap.id || "").toLowerCase().trim();
-      if (email && !deletedEmails.has(email)) {
-        const isSovereignOwner = ANCHOR_SUPER_ADMIN_EMAILS.includes(email);
+      const isSovereignOwner = ANCHOR_SUPER_ADMIN_EMAILS.includes(email);
+      const hasPassword = Boolean(data.passwordDigest || data.passwordHash);
+      if (email && !deletedEmails.has(email) && (isSovereignOwner || hasPassword)) {
         const normalizedRole = isSovereignOwner
           ? "Super Admin"
           : data.role === "Super Admin"
@@ -1764,7 +1693,7 @@ export async function getAdminOperators(): Promise<AdminOperatorRecord[]> {
           allowedTabs: Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined,
           canWrite: typeof data.canWrite === "boolean" ? data.canWrite : true,
           status: data.status || "Active",
-          passwordDigest: data.passwordDigest,
+          passwordDigest: data.passwordDigest || (data.passwordHash ? "server-scrypt" : undefined),
           createdBy: data.createdBy,
           createdAt: data.createdAt || new Date().toISOString(),
           updatedAt: data.updatedAt
@@ -1824,6 +1753,7 @@ export async function authenticateOperatorAccount(
     }
     if (
       matchedOp.passwordDigest &&
+      matchedOp.passwordDigest !== "server-scrypt" &&
       (matchedOp.passwordDigest === candidateDigest || matchedOp.passwordDigest === candidateLowerDigest)
     ) {
       return {
@@ -1837,9 +1767,11 @@ export async function authenticateOperatorAccount(
     }
   }
 
-  // Also check PlatformUsers if an Admin was created there with passwordDigest
+  // Also check PlatformUsers ONLY if an Admin was explicitly created there with a passwordDigest
   const users = await getPlatformUsers();
-  const matchedUser = users.find((u) => u.email.toLowerCase() === cleanEmail && u.role !== "Student");
+  const matchedUser = users.find(
+    (u) => u.email.toLowerCase() === cleanEmail && u.role !== "Student" && Boolean(u.passwordDigest)
+  );
   if (matchedUser) {
     if (matchedUser.status === "Suspended" || matchedUser.status === "Deactivated") {
       throw new Error("Access Revoked: Your account has been suspended or deactivated by the System Owner (Super Admin).");
@@ -1900,7 +1832,9 @@ export async function isAuthorizedAdminEmail(email: string): Promise<{
   }
 
   const operators = await getAdminOperators();
-  const matchedOp = operators.find((op) => op.email.toLowerCase() === cleanEmail);
+  const matchedOp = operators.find(
+    (op) => op.email.toLowerCase() === cleanEmail && Boolean(op.passwordDigest)
+  );
   if (matchedOp) {
     if (matchedOp.status === "Suspended") {
       return {
@@ -1921,7 +1855,8 @@ export async function isAuthorizedAdminEmail(email: string): Promise<{
   const matchedUser = users.find(
     (u) =>
       u.email.toLowerCase() === cleanEmail &&
-      (u.role === "Admin" || u.role === "Editor" || u.role === "Viewer")
+      (u.role === "Admin" || u.role === "Viewer") &&
+      Boolean(u.passwordDigest)
   );
   if (matchedUser) {
     if (matchedUser.status === "Suspended" || matchedUser.status === "Deactivated") {
@@ -1937,12 +1872,7 @@ export async function isAuthorizedAdminEmail(email: string): Promise<{
       operator: {
         email: matchedUser.email.toLowerCase(),
         fullName: matchedUser.fullName,
-        role:
-          matchedUser.role === "Admin"
-            ? "Admin"
-            : matchedUser.role === "Viewer"
-            ? "Viewer (Read Only)"
-            : "Editor",
+        role: matchedUser.role === "Admin" ? "Admin" : "Viewer (Read Only)",
         allowedTabs: matchedUser.allowedTabs,
         canWrite: matchedUser.canWrite ?? (matchedUser.role === "Admin"),
         status: "Active",
@@ -1955,7 +1885,7 @@ export async function isAuthorizedAdminEmail(email: string): Promise<{
   return {
     authorized: false,
     isSuperAdmin: false,
-    reason: `Access Denied: The email "${cleanEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+    reason: `Access Denied: The email "${cleanEmail}" has not been created by the Super Admin. No unauthorized email is allowed to log in.`
   };
 }
 
@@ -2003,9 +1933,9 @@ export async function authenticateFallbackAdmin(email: string, passwordInput: st
     console.warn("Server admin authentication check failed:", err);
   }
 
-  // Only allow master password fallback if the operator is authorized AND does not have a custom password set
-  if (!authCheck.operator?.passwordDigest && (await verifySaltedAdminDigest(passwordInput))) {
-    return ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail) ? "Super Admin" : "Admin";
+  // Master password fallback is strictly reserved for the sole Super Admin (olosundelouis@gmail.com)
+  if (ANCHOR_SUPER_ADMIN_EMAILS.includes(cleanEmail) && (await verifySaltedAdminDigest(passwordInput))) {
+    return "Super Admin";
   }
 
   return null;
@@ -5406,6 +5336,18 @@ export async function getPlatformUsers(): Promise<PlatformUser[]> {
     } catch (e) {}
   }
 
+  const isValidPlatformUser = (u: PlatformUser): boolean => {
+    const emailKey = (u.email || "").toLowerCase().trim();
+    if (!emailKey || deletedOps.has(emailKey)) return false;
+    if (ANCHOR_SUPER_ADMIN_EMAILS.includes(emailKey)) return true;
+    // Filter out legacy pre-seeded mock accounts that were never created with a password by the Super Admin
+    if (LEGACY_PRE_SEEDED_MOCK_IDS.has(u.id) && !u.passwordDigest) return false;
+    if ((u.role === "Admin" || u.role === "Viewer") && !u.passwordDigest) return false;
+    return true;
+  };
+
+  list = list.filter(isValidPlatformUser);
+
   try {
     const { collection, getDocs } = await import("firebase/firestore");
     const db = await getFirestoreDb();
@@ -5419,11 +5361,11 @@ export async function getPlatformUsers(): Promise<PlatformUser[]> {
       const byEmail = new Map<string, PlatformUser>();
       for (const item of list) {
         const key = (item.email || item.id || "").toLowerCase();
-        if (key && !deletedOps.has(key)) byEmail.set(key, item);
+        if (key && isValidPlatformUser(item)) byEmail.set(key, item);
       }
       for (const fbItem of fbList) {
         const key = (fbItem.email || fbItem.id || "").toLowerCase();
-        if (key && !deletedOps.has(key)) {
+        if (key && isValidPlatformUser(fbItem)) {
           const existing = byEmail.get(key);
           byEmail.set(key, {
             ...existing,
@@ -5439,27 +5381,7 @@ export async function getPlatformUsers(): Promise<PlatformUser[]> {
     console.warn("Could not retrieve platform users from Firestore:", err);
   }
 
-  // Ensure editable default admins (rightmindsafrica@gmail.com, corpersimpactinitiative@gmail.com) are represented in Users List
-  for (const defOp of DEFAULT_EDITABLE_ADMIN_OPERATORS) {
-    const emailKey = defOp.email.toLowerCase();
-    if (!deletedOps.has(emailKey) && !list.some((u) => (u.email || "").toLowerCase() === emailKey)) {
-      list.push({
-        id: `usr-admin-${emailKey.split("@")[0]}`,
-        fullName: defOp.fullName || emailKey.split("@")[0],
-        email: emailKey,
-        phone: "+234 800 000 0000",
-        role: "Admin",
-        status: defOp.status === "Suspended" ? "Suspended" : "Active",
-        joinedAt: defOp.createdAt,
-        location: "HQ Operations",
-        emailVerified: true,
-        allowedTabs: defOp.allowedTabs,
-        canWrite: defOp.canWrite ?? true
-      });
-    }
-  }
-
-  if (typeof window !== "undefined" && list.length > 0) {
+  if (typeof window !== "undefined") {
     try {
       localStorage.setItem("rma_platform_users", JSON.stringify(list));
     } catch {}

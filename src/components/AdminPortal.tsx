@@ -630,17 +630,17 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
     }, 8000);
 
     try {
-      // 0. STRICT ADMIN DIRECTORY GATE: Only Super Admin or Admins explicitly created in the directory can log in
+      // 0. STRICT ADMIN DIRECTORY GATE: Only Super Admin (olosundelouis@gmail.com) or Admins explicitly created by Super Admin can log in
       const authCheck = await isAuthorizedAdminEmail(cleanEmail);
-      if (!authCheck.authorized) {
+      if (!authCheck.authorized || (!isSuperAdminEmail && !authCheck.operator?.passwordDigest)) {
         throw new Error(
           authCheck.reason ||
-            `Access Denied: The email "${cleanEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+            `Access Denied: The email "${cleanEmail}" has not been created by the Super Admin. No unauthorized email is allowed to log in.`
         );
       }
 
-      // If this admin was created with a custom password, strictly require their assigned password
-      if (!isSuperAdminEmail && authCheck.operator?.passwordDigest) {
+      // Non-Super-Admin accounts MUST authenticate with the password set for them by the Super Admin
+      if (!isSuperAdminEmail && authCheck.operator?.passwordDigest && authCheck.operator.passwordDigest !== "server-scrypt") {
         const opMatch = await authenticateOperatorAccount(cleanEmail, cleanPass);
         if (!opMatch) {
           throw new Error("Invalid administrative credentials. Please enter the password assigned to your administrator account.");
@@ -710,7 +710,6 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             : true;
 
           if (serverRes.ok && serverData?.success && resolvedToken) {
-            // If non-owner admin has customized permissions in getAdminOperators(), apply them
             let finalTabs = Array.isArray(resolvedTabs) ? resolvedTabs : undefined;
             let finalWrite = resolvedWrite;
             let finalFullName = serverData?.fullName || serverData?.user?.fullName;
@@ -719,12 +718,6 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
               if (matchedOp) {
                 if (matchedOp.status === "Suspended") {
                   throw new Error("Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin).");
-                }
-                if (matchedOp.passwordDigest) {
-                  const opMatch = await authenticateOperatorAccount(cleanEmail, cleanPass);
-                  if (!opMatch) {
-                    throw new Error("Invalid administrative credentials. Please use your assigned administrator password.");
-                  }
                 }
                 finalTabs = (matchedOp.allowedTabs as AdminTabType[]) || finalTabs;
                 finalWrite = matchedOp.canWrite !== false;
@@ -755,51 +748,18 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         }
       }
 
-      // 1B. Check Operator Accounts created by Super Admin (Firestore + Local Storage + Master Key)
-      if (!serverSession) {
-        try {
-          const operatorAuth = await authenticateOperatorAccount(cleanEmail, cleanPass);
-          if (operatorAuth && operatorAuth.email) {
-            const clientSigned = await createClientSignedSession(
-              operatorAuth.email,
-              operatorAuth.role,
-              operatorAuth.allowedTabs,
-              operatorAuth.canWrite
-            );
-            serverSession = {
-              email: operatorAuth.email,
-              fullName: operatorAuth.fullName,
-              role: operatorAuth.role,
-              allowedTabs: (operatorAuth.allowedTabs as AdminTabType[]) || undefined,
-              canWrite: operatorAuth.canWrite !== false,
-              token: clientSigned.token,
-              expiresAt: clientSigned.expiresAt
-            };
-            serverLockoutSeconds = 0;
-            serverErrorMsg = "";
-          }
-        } catch (opErr: any) {
-          if (opErr?.message && opErr.message.toLowerCase().includes("suspended")) {
-            throw opErr;
-          }
-        }
-      }
-
-      // Allow master password fallback ONLY if the authorized admin has no custom password set
-      if (!serverSession && !authCheck.operator?.passwordDigest && (await verifySaltedAdminDigest(cleanPass))) {
-        const fallbackRole = isSuperAdminEmail ? "Super Admin" : (authCheck.operator?.role || "Admin");
+      // Master password fallback is ONLY allowed for the sole Super Admin (olosundelouis@gmail.com)
+      if (!serverSession && isSuperAdminEmail && (await verifySaltedAdminDigest(cleanPass))) {
         const clientSigned = await createClientSignedSession(
           cleanEmail,
-          fallbackRole,
-          authCheck.operator?.allowedTabs,
-          authCheck.operator?.canWrite
+          "Super Admin",
+          undefined,
+          true
         );
         serverSession = {
           email: cleanEmail,
-          fullName: authCheck.operator?.fullName,
-          role: fallbackRole,
-          allowedTabs: (authCheck.operator?.allowedTabs as AdminTabType[]) || undefined,
-          canWrite: authCheck.operator?.canWrite !== false,
+          role: "Super Admin",
+          canWrite: true,
           token: clientSigned.token,
           expiresAt: clientSigned.expiresAt
         };
@@ -816,9 +776,9 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         throw new Error(serverErrorMsg || "Authentication failed too many times. Access temporarily locked for security.");
       }
 
-      // 2. ATTEMPT SUPABASE AUTH IF SERVER SESSION DID NOT MATCH (Only for pre-verified authorized admin emails)
+      // 2. ATTEMPT SUPABASE AUTH ONLY FOR SUPER ADMIN IF SERVER SESSION DID NOT MATCH
       let supabaseUser: any = null;
-      if (!serverSession && !authCheck.operator?.passwordDigest && supabase && isSupabaseConfigured) {
+      if (!serverSession && isSuperAdminEmail && supabase && isSupabaseConfigured) {
         addTerminalLog(`🔐 [SUPABASE AUTH] Authenticating ${cleanEmail} against Supabase GoTrue...`);
         try {
           const { data: supaAuthData, error: supaAuthError } = await supabase.auth.signInWithPassword({
@@ -837,7 +797,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         }
       }
 
-      // 3. ATTEMPT FIREBASE AUTH (Non-blocking background sync if serverSession already succeeded)
+      // 3. ATTEMPT FIREBASE AUTH (Non-blocking background sync if serverSession already succeeded, or Super Admin fallback)
       let userCredential: any = null;
       if (serverSession) {
         (async () => {
@@ -851,7 +811,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
             }
           } catch {}
         })();
-      } else if (!authCheck.operator?.passwordDigest) {
+      } else if (isSuperAdminEmail) {
         let auth: any = null;
         try {
           const getAuthPromise = getFirebaseAuth();
@@ -876,7 +836,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
           throw new Error(serverErrorMsg || "Invalid administrative email or password.");
         }
       } else {
-        throw new Error(serverErrorMsg || "Invalid administrative email or password.");
+        throw new Error(serverErrorMsg || "Invalid administrative credentials. Please verify your email and password.");
       }
 
       // Determine final active user role & scoped permissions
@@ -1177,18 +1137,18 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       })();
 
       const authCheck = await isAuthorizedAdminEmail(cleanEmail);
-      if (!authCheck.authorized) {
+      if (!authCheck.authorized || (!isSuperAdminEmail && !authCheck.operator?.passwordDigest)) {
         await auth.signOut().catch(() => null);
         throw new Error(
           authCheck.reason ||
-            `Access Denied: The email "${cleanEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+            `Access Denied: The email "${cleanEmail}" has not been created by the Super Admin. No unauthorized email is allowed to log in.`
         );
       }
 
       if (resolvedRole === "Public User") {
         await auth.signOut().catch(() => null);
         throw new Error(
-          `Access Denied: The email "${cleanEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+          `Access Denied: The email "${cleanEmail}" has not been created by the Super Admin. No unauthorized email is allowed to log in.`
         );
       }
 

@@ -108,8 +108,8 @@ export default async function handler(req, res) {
     const allowedTabs = Array.isArray(body.allowedTabs) ? body.allowedTabs : undefined;
     const canWrite = typeof body.canWrite === "boolean" ? body.canWrite : true;
 
-    if (!targetEmail || targetPassword.length < 8) {
-      return res.status(400).json({ error: "Valid email and strong password (8+ chars) are required." });
+    if (!targetEmail || targetPassword.length < 6) {
+      return res.status(400).json({ error: "Valid email and password (6+ chars) are required." });
     }
 
     const { salt, hash } = hashPasswordScrypt(targetPassword);

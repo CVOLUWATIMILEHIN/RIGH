@@ -54,80 +54,6 @@ const DEFAULT_USERS: PlatformUser[] = [
     location: "Lagos State",
     emailVerified: true,
     canWrite: true
-  },
-  {
-    id: "usr-admin-rightmindsafrica",
-    fullName: "Right Minds Africa Admin",
-    email: "rightmindsafrica@gmail.com",
-    phone: "+234 800 000 0001",
-    role: "Admin",
-    status: "Active",
-    joinedAt: "2026-05-01T10:00:00.000Z",
-    location: "HQ Operations",
-    emailVerified: true,
-    allowedTabs: [...DEFAULT_LIMITED_ADMIN_TABS],
-    canWrite: true
-  },
-  {
-    id: "usr-admin-corpersimpactinitiative",
-    fullName: "Corper Impact Initiative Admin",
-    email: "corpersimpactinitiative@gmail.com",
-    phone: "+234 800 000 0002",
-    role: "Admin",
-    status: "Active",
-    joinedAt: "2026-05-01T10:05:00.000Z",
-    location: "HQ Operations",
-    emailVerified: true,
-    allowedTabs: [...DEFAULT_LIMITED_ADMIN_TABS],
-    canWrite: true
-  },
-  {
-    id: "usr-1",
-    fullName: "Adebayo Adesina",
-    email: "a.adesina@gmail.com",
-    phone: "+234 803 111 2222",
-    role: "Admin",
-    status: "Active",
-    joinedAt: "2026-05-10T11:00:00.000Z",
-    location: "Lagos State",
-    allowedTabs: ["dashboard", "reg-cii", "reg-rma", "events", "visitors-live"],
-    canWrite: true
-  },
-  {
-    id: "usr-2",
-    fullName: "Miriam Eke",
-    email: "miriam.eke@yahoo.com",
-    phone: "+234 812 444 5555",
-    role: "Mentor",
-    status: "Active",
-    joinedAt: "2026-05-12T14:30:00.000Z",
-    location: "Enugu State",
-    allowedTabs: ["dashboard", "reg-cii", "reg-rma", "lms-courses", "lms-students"],
-    canWrite: false
-  },
-  {
-    id: "usr-3",
-    fullName: "Tunde Bakare",
-    email: "tundebakare@outlook.com",
-    phone: "+234 905 888 9999",
-    role: "Viewer",
-    status: "Suspended",
-    joinedAt: "2026-04-20T09:15:00.000Z",
-    location: "Ogun State",
-    allowedTabs: ["dashboard", "visitors-analytics"],
-    canWrite: false
-  },
-  {
-    id: "usr-4",
-    fullName: "Fatima Yusuf",
-    email: "fatima.y@gmail.com",
-    phone: "+234 703 555 6666",
-    role: "Mentor",
-    status: "Active",
-    joinedAt: "2026-05-15T16:20:00.000Z",
-    location: "Kaduna State",
-    allowedTabs: ["dashboard", "teen-bootcamp", "events"],
-    canWrite: false
   }
 ];
 
@@ -279,7 +205,7 @@ export default function AdminUserManagement({
     const cleanEmail = formData.email.trim().toLowerCase();
     const isAdminOrStaffRole = formData.role === "Admin" || formData.role === "Viewer" || formData.role === "Mentor";
 
-    if (formData.role === "Admin" && !isSuperAdmin) {
+    if ((formData.role === "Admin" || formData.role === "Viewer") && !isSuperAdmin) {
       setFormNotice({
         text: "Access Denied: Only the System Owner (Super Admin) can create or configure Admin users.",
         type: "error"
@@ -287,9 +213,9 @@ export default function AdminUserManagement({
       return;
     }
 
-    if (!editingUser && formData.role === "Admin" && formData.password.trim().length < 8) {
+    if (!editingUser && isAdminOrStaffRole && formData.password.trim().length < 6) {
       setFormNotice({
-        text: "Please set a login password of at least 8 characters for this new Admin user.",
+        text: "Please set a login password of at least 6 characters for this new administrator account.",
         type: "error"
       });
       return;
@@ -319,7 +245,7 @@ export default function AdminUserManagement({
         });
 
         // Provision in Firebase Auth if password was provided
-        if (formData.password.trim().length >= 8) {
+        if (formData.password.trim().length >= 6) {
           try {
             const { initializeApp, deleteApp, getApps } = await import("firebase/app");
             const { getAuth, createUserWithEmailAndPassword, signOut: fbSignOut } = await import("firebase/auth");

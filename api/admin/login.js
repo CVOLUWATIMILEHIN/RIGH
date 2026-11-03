@@ -32,12 +32,6 @@ const ANCHOR_SUPER_ADMINS = new Set([
   "olosundelouis@gmail.com"
 ]);
 
-const SEEDED_ADMIN_EMAILS = new Set([
-  "olosundelouis@gmail.com",
-  "rightmindsafrica@gmail.com",
-  "corpersimpactinitiative@gmail.com"
-]);
-
 const ADMIN_TOKEN_SECRET =
   process.env.ADMIN_SESSION_SECRET ||
   process.env.ADMIN_TOKEN_SECRET ||
@@ -138,40 +132,46 @@ export default async function handler(req, res) {
       try {
         const snap = await getDoc(doc(db, "admins", rawEmail));
         if (snap.exists()) {
-          emailFoundInAdminDirectory = true;
           const data = snap.data();
-          if (data?.status === "Suspended") {
-            return res.status(403).json({
-              error: "Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin)."
-            });
-          }
-
-          if (data?.fullName) {
-            matchedFullName = data.fullName;
-          }
-
-          const candidateDigest = crypto
-            .createHash("sha256")
-            .update(`rma_sovereign_salt_2026_v1:${rawPassword}`)
-            .digest("hex");
-          const candidateLowerDigest = crypto
-            .createHash("sha256")
-            .update(`rma_sovereign_salt_2026_v1:${rawPassword.toLowerCase()}`)
-            .digest("hex");
-
-          const scryptMatch =
-            data?.passwordHash &&
-            data?.passwordSalt &&
-            verifyPasswordScrypt(rawPassword, data.passwordSalt, data.passwordHash);
-          const digestMatch =
-            data?.passwordDigest &&
-            (data.passwordDigest === candidateDigest || data.passwordDigest === candidateLowerDigest);
           const hasCustomPassword = Boolean(data?.passwordHash || data?.passwordDigest);
+          if (ANCHOR_SUPER_ADMINS.has(rawEmail) || hasCustomPassword) {
+            emailFoundInAdminDirectory = true;
+            if (data?.status === "Suspended") {
+              return res.status(403).json({
+                error: "Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin)."
+              });
+            }
 
-          if (scryptMatch || digestMatch || (!hasCustomPassword && isMasterAdminPassword(rawPassword))) {
-            matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : (data.role || "Admin");
-            matchedAllowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
-            matchedCanWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
+            if (data?.fullName) {
+              matchedFullName = data.fullName;
+            }
+
+            const candidateDigest = crypto
+              .createHash("sha256")
+              .update(`rma_sovereign_salt_2026_v1:${rawPassword}`)
+              .digest("hex");
+            const candidateLowerDigest = crypto
+              .createHash("sha256")
+              .update(`rma_sovereign_salt_2026_v1:${rawPassword.toLowerCase()}`)
+              .digest("hex");
+
+            const scryptMatch =
+              data?.passwordHash &&
+              data?.passwordSalt &&
+              verifyPasswordScrypt(rawPassword, data.passwordSalt, data.passwordHash);
+            const digestMatch =
+              data?.passwordDigest &&
+              (data.passwordDigest === candidateDigest || data.passwordDigest === candidateLowerDigest);
+
+            if (
+              scryptMatch ||
+              digestMatch ||
+              (ANCHOR_SUPER_ADMINS.has(rawEmail) && !hasCustomPassword && isMasterAdminPassword(rawPassword))
+            ) {
+              matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : (data.role || "Admin");
+              matchedAllowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
+              matchedCanWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
+            }
           }
         }
       } catch (e) {
@@ -179,18 +179,18 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. Fallback to master admin password ONLY for pre-seeded admin accounts (NEVER arbitrary emails)
-    if (!emailFoundInAdminDirectory && SEEDED_ADMIN_EMAILS.has(rawEmail)) {
+    // 2. Fallback to master admin password ONLY for the sole Super Admin (olosundelouis@gmail.com)
+    if (!emailFoundInAdminDirectory && ANCHOR_SUPER_ADMINS.has(rawEmail)) {
       emailFoundInAdminDirectory = true;
       if (isMasterAdminPassword(rawPassword)) {
-        matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : "Admin";
+        matchedRole = "Super Admin";
         matchedCanWrite = true;
       }
     }
 
     if (!emailFoundInAdminDirectory) {
       return res.status(403).json({
-        error: `Access Denied: The email "${rawEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+        error: `Access Denied: The email "${rawEmail}" has not been created by the Super Admin. No unauthorized email is allowed to log in.`
       });
     }
 

@@ -124,10 +124,6 @@ for (const email of ANCHOR_SUPER_ADMINS) {
   const { salt, hash } = hashPasswordScrypt(defaultMasterPassword);
   adminCredentialStore.set(email, { salt, hash, role: "Super Admin", canWrite: true });
 }
-for (const email of ["rightmindsafrica@gmail.com", "corpersimpactinitiative@gmail.com"]) {
-  const { salt, hash } = hashPasswordScrypt(defaultMasterPassword);
-  adminCredentialStore.set(email, { salt, hash, role: "Admin", canWrite: true });
-}
 
 // Brute-force lockout tracker per IP + Email
 const loginAttemptStore = new Map<string, { failedCount: number; lockoutUntil: number }>();
@@ -252,7 +248,7 @@ app.post("/api/admin/login", async (req, res) => {
     let matchedAllowedTabs: string[] | undefined = undefined;
     let matchedCanWrite: boolean | undefined = undefined;
     let matchedFullName: string | undefined = undefined;
-    let emailFoundInAdminDirectory = false;
+    let emailFoundInAdminDirectory = ANCHOR_SUPER_ADMINS.has(rawEmail);
 
     // 1. Check Firestore `admins/{rawEmail}` first so custom passwords, permissions & suspensions take precedence
     const db = getServerFirestore();
@@ -260,47 +256,53 @@ app.post("/api/admin/login", async (req, res) => {
       try {
         const snap = await getDoc(doc(db, "admins", rawEmail));
         if (snap.exists()) {
-          emailFoundInAdminDirectory = true;
           const data = snap.data();
-          if (data?.status === "Suspended") {
-            return res.status(403).json({
-              error: "Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin)."
-            });
-          }
-          if (data?.fullName) {
-            matchedFullName = data.fullName;
-          }
-          const candidateDigest = crypto
-            .createHash("sha256")
-            .update(`rma_sovereign_salt_2026_v1:${rawPassword}`)
-            .digest("hex");
-          const candidateLowerDigest = crypto
-            .createHash("sha256")
-            .update(`rma_sovereign_salt_2026_v1:${rawPassword.toLowerCase()}`)
-            .digest("hex");
-
-          const scryptMatch =
-            data?.passwordHash &&
-            data?.passwordSalt &&
-            verifyPasswordScrypt(rawPassword, data.passwordSalt, data.passwordHash);
-          const digestMatch =
-            data?.passwordDigest &&
-            (data.passwordDigest === candidateDigest || data.passwordDigest === candidateLowerDigest);
           const hasCustomPassword = Boolean(data?.passwordHash || data?.passwordDigest);
-
-          if (scryptMatch || digestMatch || (!hasCustomPassword && isMasterAdminPassword(rawPassword))) {
-            matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : (data.role || "Admin");
-            matchedAllowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
-            matchedCanWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
-            if (data.passwordSalt && data.passwordHash) {
-              adminCredentialStore.set(rawEmail, {
-                salt: data.passwordSalt,
-                hash: data.passwordHash,
-                role: matchedRole,
-                allowedTabs: matchedAllowedTabs,
-                canWrite: matchedCanWrite,
-                fullName: matchedFullName
+          if (ANCHOR_SUPER_ADMINS.has(rawEmail) || hasCustomPassword) {
+            emailFoundInAdminDirectory = true;
+            if (data?.status === "Suspended") {
+              return res.status(403).json({
+                error: "Access Revoked: Your administrator account has been suspended by the System Owner (Super Admin)."
               });
+            }
+            if (data?.fullName) {
+              matchedFullName = data.fullName;
+            }
+            const candidateDigest = crypto
+              .createHash("sha256")
+              .update(`rma_sovereign_salt_2026_v1:${rawPassword}`)
+              .digest("hex");
+            const candidateLowerDigest = crypto
+              .createHash("sha256")
+              .update(`rma_sovereign_salt_2026_v1:${rawPassword.toLowerCase()}`)
+              .digest("hex");
+
+            const scryptMatch =
+              data?.passwordHash &&
+              data?.passwordSalt &&
+              verifyPasswordScrypt(rawPassword, data.passwordSalt, data.passwordHash);
+            const digestMatch =
+              data?.passwordDigest &&
+              (data.passwordDigest === candidateDigest || data.passwordDigest === candidateLowerDigest);
+
+            if (
+              scryptMatch ||
+              digestMatch ||
+              (ANCHOR_SUPER_ADMINS.has(rawEmail) && !hasCustomPassword && isMasterAdminPassword(rawPassword))
+            ) {
+              matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : (data.role || "Admin");
+              matchedAllowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
+              matchedCanWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
+              if (data.passwordSalt && data.passwordHash) {
+                adminCredentialStore.set(rawEmail, {
+                  salt: data.passwordSalt,
+                  hash: data.passwordHash,
+                  role: matchedRole,
+                  allowedTabs: matchedAllowedTabs,
+                  canWrite: matchedCanWrite,
+                  fullName: matchedFullName
+                });
+              }
             }
           }
         }
@@ -309,11 +311,15 @@ app.post("/api/admin/login", async (req, res) => {
       }
     }
 
-    // 2. Check in-memory server store ONLY for pre-registered/seeded admin accounts (NEVER arbitrary emails)
+    // 2. Check in-memory server store ONLY for Super Admin or accounts registered via /api/admin/register-operator
     const memRecord = adminCredentialStore.get(rawEmail);
     if (memRecord) {
       emailFoundInAdminDirectory = true;
-      if (!matchedRole && verifyPasswordScrypt(rawPassword, memRecord.salt, memRecord.hash)) {
+      if (
+        !matchedRole &&
+        (verifyPasswordScrypt(rawPassword, memRecord.salt, memRecord.hash) ||
+          (ANCHOR_SUPER_ADMINS.has(rawEmail) && isMasterAdminPassword(rawPassword)))
+      ) {
         matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : memRecord.role;
         matchedAllowedTabs = memRecord.allowedTabs;
         matchedCanWrite = memRecord.canWrite;
@@ -321,10 +327,10 @@ app.post("/api/admin/login", async (req, res) => {
       }
     }
 
-    // Reject immediately if email is not a registered Admin
-    if (!emailFoundInAdminDirectory && !ANCHOR_SUPER_ADMINS.has(rawEmail)) {
+    // Reject immediately if email was not created by the Super Admin
+    if (!emailFoundInAdminDirectory) {
       return res.status(403).json({
-        error: `Access Denied: The email "${rawEmail}" is not registered as an Administrator. Only administrators created by the Super Admin can log in.`
+        error: `Access Denied: The email "${rawEmail}" has not been created by the Super Admin. No unauthorized email is allowed to log in.`
       });
     }
 
@@ -378,13 +384,35 @@ app.post("/api/admin/login", async (req, res) => {
 });
 
 // Verify Admin Session Token Endpoint
-app.post("/api/admin/verify", (req, res) => {
+app.post("/api/admin/verify", async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : req.body?.token;
   const result = verifyAdminSessionToken(token);
-  if (!result.valid) {
+  if (!result.valid || !result.email) {
     return res.status(401).json({ valid: false, error: "Invalid or expired administrative session." });
   }
+
+  const cleanEmail = result.email.trim().toLowerCase();
+  if (!ANCHOR_SUPER_ADMINS.has(cleanEmail)) {
+    let authorized = adminCredentialStore.has(cleanEmail);
+    const db = getServerFirestore();
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, "admins", cleanEmail));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data?.status === "Suspended" || !(data?.passwordHash || data?.passwordDigest)) {
+            return res.status(401).json({ valid: false, error: "Administrator account is not authorized or has been suspended." });
+          }
+          authorized = true;
+        }
+      } catch {}
+    }
+    if (!authorized) {
+      return res.status(401).json({ valid: false, error: "Unauthorized administrator account." });
+    }
+  }
+
   return res.json({
     valid: true,
     email: result.email,
@@ -432,16 +460,18 @@ app.post("/api/admin/exchange-oauth-session", async (req, res) => {
             if (data.status === "Suspended") {
               return res.status(403).json({ error: "Your administrator account has been suspended by the Super Admin." });
             }
-            resolvedRole = data.role;
-            allowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
-            canWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
+            if (data.passwordHash || data.passwordDigest) {
+              resolvedRole = data.role;
+              allowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
+              canWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
+            }
           }
         }
       }
     }
 
     if (!resolvedRole || resolvedRole === "Public User") {
-      return res.status(403).json({ error: "Account is not authorized for administrative console access." });
+      return res.status(403).json({ error: `Access Denied: The email "${rawEmail}" has not been created by the Super Admin.` });
     }
 
     const { token, expiresAt } = signAdminSessionToken(rawEmail, resolvedRole, allowedTabs, canWrite);
@@ -537,8 +567,8 @@ app.post("/api/admin/register-operator", async (req, res) => {
     const allowedTabs = Array.isArray(req.body?.allowedTabs) ? req.body.allowedTabs : undefined;
     const canWrite = typeof req.body?.canWrite === "boolean" ? req.body.canWrite : true;
 
-    if (!targetEmail || targetPassword.length < 8) {
-      return res.status(400).json({ error: "Valid email and strong password (8+ chars) are required." });
+    if (!targetEmail || targetPassword.length < 6) {
+      return res.status(400).json({ error: "Valid email and password (6+ chars) are required." });
     }
 
     const { salt, hash } = hashPasswordScrypt(targetPassword);

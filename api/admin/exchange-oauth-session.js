@@ -32,12 +32,6 @@ const ANCHOR_SUPER_ADMINS = new Set([
   "olosundelouis@gmail.com"
 ]);
 
-const SEEDED_ADMIN_EMAILS = new Set([
-  "olosundelouis@gmail.com",
-  "rightmindsafrica@gmail.com",
-  "corpersimpactinitiative@gmail.com"
-]);
-
 const ADMIN_TOKEN_SECRET =
   process.env.ADMIN_SESSION_SECRET ||
   process.env.ADMIN_TOKEN_SECRET ||
@@ -93,22 +87,19 @@ export default async function handler(req, res) {
                 error: "Your administrator account has been suspended by the Super Admin."
               });
             }
-            resolvedRole = data.role;
-            allowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
-            canWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
+            if (data.passwordHash || data.passwordDigest) {
+              resolvedRole = data.role;
+              allowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
+              canWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
+            }
           }
         } catch {}
-      }
-      if (!resolvedRole && SEEDED_ADMIN_EMAILS.has(rawEmail)) {
-        resolvedRole = "Admin";
-        allowedTabs = Array.isArray(body.allowedTabs) ? body.allowedTabs : undefined;
-        canWrite = typeof body.canWrite === "boolean" ? body.canWrite : true;
       }
     }
 
     if (!resolvedRole || resolvedRole === "Public User") {
       return res.status(403).json({
-        error: `Access Denied: The email "${rawEmail}" is not registered as an Administrator.`
+        error: `Access Denied: The email "${rawEmail}" has not been created by the Super Admin. No unauthorized email is allowed to log in.`
       });
     }
 
