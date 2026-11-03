@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Mail, User, Save, AlertCircle, FileText, Send, CheckCircle2 } from "lucide-react";
+import { Mail, User, Save, AlertCircle, FileText, Send, CheckCircle2, KeyRound, Copy, Check, ExternalLink, Code2 } from "lucide-react";
 import { getEmailSettings, saveEmailSettings, EmailSettings } from "../lib/db";
 
 interface AdminEmailSettingsProps {
@@ -26,17 +26,42 @@ export const AdminEmailSettings: React.FC<AdminEmailSettingsProps> = ({
   const [saving, setSaving] = useState<boolean>(false);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateKey>("ciiWelcome");
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [copiedWebhookScript, setCopiedWebhookScript] = useState<boolean>(false);
   const [testEmailInput, setTestEmailInput] = useState<string>("olosundelouis@gmail.com");
   const [sendingTest, setSendingTest] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
     simulated?: boolean;
     hasResendKey?: boolean;
+    hasSmtp?: boolean;
     senderEmail?: string;
     sandboxRedirectTo?: string | null;
     messageId?: string | null;
     error?: string | null;
   } | null>(null);
+
+  const googleFormAppsScript = `// Paste into Google Form -> Extensions -> Apps Script, then add Trigger: From form -> On form submit
+function onFormSubmit(e) {
+  var responses = e && e.namedValues ? e.namedValues : {};
+  if (!e && FormApp.getActiveForm()) {
+    var items = FormApp.getActiveForm().getResponses();
+    if (items.length > 0) {
+      var latest = items[items.length - 1].getItemResponses();
+      for (var i = 0; i < latest.length; i++) {
+        responses[latest[i].getItem().getTitle()] = [latest[i].getResponse()];
+      }
+    }
+  }
+  UrlFetchApp.fetch("${typeof window !== "undefined" ? window.location.origin : "https://rightmindsafrica.org"}/api/email/trigger", {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify({
+      event: "GOOGLE_FORM_WEBHOOK",
+      namedValues: responses
+    }),
+    muteHttpExceptions: true
+  });
+}`;
 
   useEffect(() => {
     async function load() {
@@ -60,6 +85,9 @@ export const AdminEmailSettings: React.FC<AdminEmailSettingsProps> = ({
     setSendingTest(true);
     setTestResult(null);
     try {
+      if (settings && hasWriteAccess) {
+        await saveEmailSettings(settings);
+      }
       const res = await fetch("/api/email/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -234,7 +262,7 @@ export const AdminEmailSettings: React.FC<AdminEmailSettingsProps> = ({
                 value={settings.replyTo}
                 onChange={(e) => handleFieldChange("replyTo", e.target.value)}
                 className="w-full pl-9 pr-3 py-2 bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-slate-400 rounded-xl text-xs font-medium transition-all"
-                placeholder="e.g. info@rightminds.org"
+                placeholder="e.g. info@rightmindsafrica.org"
               />
             </div>
           </div>
@@ -259,6 +287,122 @@ export const AdminEmailSettings: React.FC<AdminEmailSettingsProps> = ({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Direct Delivery Gateway to ALL External Registrant Emails */}
+      <div className="bg-amber-50/70 p-6 rounded-2xl border border-amber-200 space-y-4 text-left">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+              <KeyRound size={16} className="text-[#103D2E]" />
+              Direct Inbox Delivery Gateway (Send to ALL External Registrant Emails)
+            </h3>
+            <p className="text-2xs text-slate-600 font-medium mt-1 leading-relaxed">
+              <strong>Why an external registrant didn&apos;t receive a mail:</strong> Resend&apos;s default <code>onboarding@resend.dev</code> sandbox address blocks sending to external email addresses unless you either (Option A) enter a <strong>Gmail Address + 16-Character Gmail App Password</strong> below (works immediately for all <code>@gmail.com</code>, <code>@yahoo.com</code>, etc. registrants!), or (Option B) enter your verified domain sender address from Resend.
+            </p>
+          </div>
+          <a
+            href="https://myaccount.google.com/apppasswords"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-2 bg-[#103D2E] hover:bg-[#1b503f] text-amber-300 rounded-xl text-2xs font-extrabold uppercase tracking-wider inline-flex items-center gap-1.5 shrink-0 self-start"
+          >
+            <span>Get Gmail App Password</span>
+            <ExternalLink size={12} />
+          </a>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+          {/* Option A1: Gmail / SMTP User */}
+          <div className="space-y-1.5">
+            <label className="block text-2xs font-extrabold uppercase text-slate-700 tracking-wider">
+              Option A: Official Gmail Address (Recommended)
+            </label>
+            <input
+              type="email"
+              disabled={!hasWriteAccess}
+              value={settings.smtpUser || ""}
+              onChange={(e) => handleFieldChange("smtpUser", e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-white border border-amber-300 focus:border-[#103D2E] rounded-xl text-xs font-medium transition-all"
+              placeholder="e.g. rightmindsafrica@gmail.com"
+            />
+          </div>
+
+          {/* Option A2: Gmail 16-Char App Password */}
+          <div className="space-y-1.5">
+            <label className="block text-2xs font-extrabold uppercase text-slate-700 tracking-wider">
+              Gmail 16-Char App Password
+            </label>
+            <input
+              type="password"
+              disabled={!hasWriteAccess}
+              value={settings.smtpPass || ""}
+              onChange={(e) => handleFieldChange("smtpPass", e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-white border border-amber-300 focus:border-[#103D2E] rounded-xl text-xs font-mono transition-all"
+              placeholder="xxxx xxxx xxxx xxxx"
+            />
+          </div>
+
+          {/* Option B: Verified Resend Custom Domain Sender */}
+          <div className="space-y-1.5">
+            <label className="block text-2xs font-extrabold uppercase text-slate-700 tracking-wider">
+              Option B: Verified Domain Sender (Resend)
+            </label>
+            <input
+              type="email"
+              disabled={!hasWriteAccess}
+              value={settings.senderEmail || ""}
+              onChange={(e) => handleFieldChange("senderEmail", e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-white border border-amber-300 focus:border-[#103D2E] rounded-xl text-xs font-medium transition-all"
+              placeholder="e.g. info@rightmindsafrica.org"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <p className="text-[11px] text-slate-600">
+            Click <strong>Save Settings &amp; Templates</strong> after entering your Gmail App Password or Verified Domain Sender, then test with any external email below.
+          </p>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !hasWriteAccess}
+            className="px-4 py-2 bg-[#103D2E] hover:bg-[#1b503f] disabled:bg-slate-300 text-amber-300 rounded-xl text-2xs font-extrabold uppercase tracking-wider inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <Save size={12} />
+            <span>{saving ? "Saving..." : "Save Gateway Settings Now"}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Google Form Automatic Webhook Script Card */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-150 space-y-3 text-left">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider flex items-center gap-2">
+              <Code2 size={16} className="text-[#103D2E]" />
+              Google Form Automatic Email Webhook (Optional 1-Minute Setup)
+            </h3>
+            <p className="text-2xs text-slate-500 font-medium mt-0.5">
+              Because Google Forms runs inside <code>docs.google.com</code>, you can paste this script into your Google Form (<strong>Extensions &rarr; Apps Script</strong>, then add a <strong>Trigger &rarr; On form submit</strong>) so Google Forms automatically sends the confirmation email + WhatsApp link the instant someone clicks Submit inside Google Forms.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(googleFormAppsScript);
+              setCopiedWebhookScript(true);
+              setTimeout(() => setCopiedWebhookScript(false), 2500);
+            }}
+            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-2xs font-extrabold uppercase tracking-wider inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            {copiedWebhookScript ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+            <span>{copiedWebhookScript ? "Webhook Script Copied!" : "Copy Google Form Script"}</span>
+          </button>
+        </div>
+        <pre className="p-3.5 bg-slate-900 text-emerald-300 rounded-xl text-[11px] font-mono overflow-x-auto leading-relaxed">
+          {googleFormAppsScript}
+        </pre>
       </div>
 
       {/* Dynamic Templates Editor Card */}

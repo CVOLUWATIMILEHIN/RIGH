@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { initializeFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -35,6 +36,80 @@ async function saveEmailLog(db, logId, data) {
   } catch {}
 }
 
+async function logEmailTransaction(db, entry) {
+  const id = `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const nowIso = new Date().toISOString();
+  const fullEntry = {
+    id,
+    registrationId: entry.registrationId || "N/A",
+    programType: entry.programType || "volunteer",
+    recipient: entry.recipient,
+    subject: entry.subject,
+    body: entry.body || "",
+    status: entry.status,
+    sandboxRedirectTo: entry.sandboxRedirectTo || null,
+    timestamp: nowIso,
+    sentTime: nowIso,
+    deliveryResult: entry.deliveryResult
+  };
+  await saveEmailLog(db, id, fullEntry);
+  return fullEntry;
+}
+
+function normalizeGoogleFormWebhookPayload(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const flat = { ...raw };
+  if (raw.namedValues && typeof raw.namedValues === "object") {
+    for (const [k, v] of Object.entries(raw.namedValues)) {
+      flat[k] = Array.isArray(v) ? v[0] : v;
+    }
+  }
+  if (raw.responses && typeof raw.responses === "object") {
+    for (const [k, v] of Object.entries(raw.responses)) {
+      flat[k] = Array.isArray(v) ? v[0] : v;
+    }
+  }
+
+  let email = String(flat.email || flat.Email || flat["Email Address"] || flat["Email address"] || "").trim();
+  let fullName = String(flat.fullName || flat.name || flat["Full Name"] || flat["Name"] || "").trim();
+  let phone = String(flat.phone || flat["Phone Number"] || flat["WhatsApp Number"] || "").trim();
+  let primaryRole = String(flat.primaryRole || flat.department || flat["Primary Internship Role"] || flat["Role"] || "").trim();
+  let location = String(flat.location || flat["City / State of Residence"] || flat["Location"] || "").trim();
+
+  for (const [key, val] of Object.entries(flat)) {
+    const kLower = key.toLowerCase();
+    const sVal = String(val || "").trim();
+    if (!sVal) continue;
+    if (!email && (kLower.includes("email") || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sVal))) {
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sVal)) email = sVal;
+    }
+    if (!fullName && (kLower.includes("full name") || kLower === "name" || kLower.includes("your name") || kLower.includes("applicant name"))) {
+      fullName = sVal;
+    }
+    if (!phone && (kLower.includes("phone") || kLower.includes("whatsapp") || kLower.includes("mobile"))) {
+      phone = sVal;
+    }
+    if (!primaryRole && (kLower.includes("primary") || kLower.includes("role") || kLower.includes("department") || kLower.includes("track"))) {
+      primaryRole = sVal;
+    }
+    if (!location && (kLower.includes("city") || kLower.includes("state") || kLower.includes("location") || kLower.includes("residence"))) {
+      location = sVal;
+    }
+  }
+
+  return {
+    ...flat,
+    email,
+    fullName: fullName || (email ? email.split("@")[0] : "Applicant"),
+    phone: phone || "Provided via Google Form",
+    primaryRole: primaryRole || "Internship & Volunteer Team",
+    department: primaryRole || "Internship & Volunteer Team",
+    location: location || "Nigeria",
+    programType: flat.programType || "internship",
+    programName: flat.programName || "Right-Minds Africa Hub Internship & Volunteer Application"
+  };
+}
+
 function parseTemplate(template, data) {
   let parsed = String(template || "");
   for (const key of Object.keys(data || {})) {
@@ -45,8 +120,14 @@ function parseTemplate(template, data) {
 }
 
 async function sendEmailViaResend(to, subject, textBody, senderOpts) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const senderEmail = process.env.SENDER_EMAIL || "onboarding@resend.dev";
+  const apiKey = (senderOpts.resendApiKey || process.env.RESEND_API_KEY || "").trim();
+  const configuredSenderEmail = (senderOpts.senderEmail || process.env.SENDER_EMAIL || "").trim();
+  const senderEmail = configuredSenderEmail || "onboarding@resend.dev";
+  const smtpUser = (senderOpts.smtpUser || process.env.SMTP_USER || process.env.GMAIL_USER || "").trim();
+  const smtpPass = (senderOpts.smtpPass || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
+  const smtpHost = (senderOpts.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com").trim();
+  const smtpPort = Number(senderOpts.smtpPort || process.env.SMTP_PORT || 465);
+
   const fromNameAndEmail = `"${senderOpts.senderName}" <${senderEmail}>`;
   const fallbackFrom = `"${senderOpts.senderName}" <onboarding@resend.dev>`;
 
@@ -138,6 +219,44 @@ async function sendEmailViaResend(to, subject, textBody, senderOpts) {
     </html>
   `;
 
+  // Priority 1: Direct SMTP / Gmail App Password transport (delivers to ANY external email without domain verification limits)
+  if (smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        }
+      });
+
+      const info = await transporter.sendMail({
+        from: `"${senderOpts.senderName}" <${smtpUser}>`,
+        to,
+        replyTo: senderOpts.replyTo || smtpUser,
+        subject,
+        text: textBody,
+        html: buildHtmlBody("", textBody)
+      });
+
+      return {
+        success: true,
+        simulated: false,
+        messageId: info.messageId || `SMTP-${Date.now()}`
+      };
+    } catch (smtpErr) {
+      if (!apiKey) {
+        return {
+          success: false,
+          simulated: false,
+          error: `SMTP Error: ${smtpErr?.message || String(smtpErr)}`
+        };
+      }
+    }
+  }
+
   if (!apiKey) {
     return {
       success: true,
@@ -201,7 +320,7 @@ async function sendEmailViaResend(to, subject, textBody, senderOpts) {
       const retryBanner = `
         <div style="background-color: #FEF3C7; border: 1px solid #D97706; padding: 12px; margin-bottom: 20px; border-radius: 8px; font-size: 11px; color: #92400E;">
           <strong>SANDBOX RESEND REDIRECT</strong><br/>
-          This official confirmation email was addressed to <code>${to}</code>. It was routed to your verified Resend account <code>${retryTo}</code> because Resend is currently in sandbox mode (<code>onboarding@resend.dev</code>). Once your custom domain is verified in Resend and set in <code>SENDER_EMAIL</code>, emails go directly to every applicant without this banner.
+          This official confirmation email was addressed to <code>${to}</code>. It was routed to your verified Resend account <code>${retryTo}</code> because Resend is currently in sandbox mode (<code>onboarding@resend.dev</code>). Configure a Gmail App Password or Verified Domain in Admin Email Settings so emails go directly to every applicant.
         </div>
       `;
       try {
@@ -237,8 +356,14 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const event = body.event || body.type;
-    const payload = body.payload || body.record || body;
+    let event = body.event || body.type;
+    let payload = body.payload || body.record || body;
+
+    if (!event && (body.namedValues || body.responses || body.email || body.Email)) {
+      event = "GOOGLE_FORM_WEBHOOK";
+      payload = body;
+    }
+
     if (!event) {
       return res.status(400).json({ error: "Missing action event marker." });
     }
@@ -255,7 +380,13 @@ export default async function handler(req, res) {
     const senderOpts = {
       senderName: remoteSettings?.senderName || "Right Minds Africa",
       replyTo: remoteSettings?.replyTo || "info@rightmindsafrica.org",
-      notificationEmail: remoteSettings?.notificationEmail || "olosundelouis@gmail.com"
+      notificationEmail: remoteSettings?.notificationEmail || "olosundelouis@gmail.com",
+      senderEmail: remoteSettings?.senderEmail || "",
+      smtpUser: remoteSettings?.smtpUser || "",
+      smtpPass: remoteSettings?.smtpPass || "",
+      smtpHost: remoteSettings?.smtpHost || "",
+      smtpPort: remoteSettings?.smtpPort || 465,
+      resendApiKey: remoteSettings?.resendApiKey || ""
     };
 
     const submissionDate = new Date().toLocaleDateString("en-US", {
@@ -264,11 +395,43 @@ export default async function handler(req, res) {
       day: "numeric"
     });
 
+    if (event === "GOOGLE_FORM_WEBHOOK") {
+      payload = normalizeGoogleFormWebhookPayload(payload);
+      if (db && payload.email) {
+        const webhookRegId = payload.referenceNumber || `VOL-${Date.now().toString().slice(-6)}`;
+        payload.referenceNumber = webhookRegId;
+        try {
+          await setDoc(
+            doc(db, "registrations", webhookRegId),
+            {
+              id: webhookRegId,
+              referenceNumber: webhookRegId,
+              fullName: payload.fullName,
+              email: payload.email,
+              phone: payload.phone,
+              location: payload.location,
+              profileType: "volunteer",
+              programType: "internship",
+              programName: payload.programName,
+              department: payload.primaryRole,
+              primaryRole: payload.primaryRole,
+              status: "pending",
+              paymentStatus: "not_required",
+              registeredAt: new Date().toISOString()
+            },
+            { merge: true }
+          );
+        } catch {}
+      }
+      event = "VOLUNTEER_APPLICATION_SUBMITTED";
+    }
+
     if (event === "TEST_EMAIL_DISPATCH") {
       const targetEmail = (payload?.email || senderOpts.notificationEmail || "olosundelouis@gmail.com").trim();
       const whatsappUrl = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
+      const activeSender = senderOpts.smtpUser || senderOpts.senderEmail || process.env.SENDER_EMAIL || "onboarding@resend.dev";
       const subject = "Diagnostic Test – Right-Minds Africa Hub Auto Email API";
-      const textBody = `Dear Administrator,\n\nThis is a live diagnostic test from your Right-Minds Africa Hub Automated Email API.\n\nDiagnostic Details:\n* Target Recipient: ${targetEmail}\n* Outbound Sender Name: ${senderOpts.senderName}\n* Configured SENDER_EMAIL: ${process.env.SENDER_EMAIL || "onboarding@resend.dev"}\n* Resend API Key Configured: ${process.env.RESEND_API_KEY ? "YES (Live Resend Mode)" : "NO (Simulation Mode)"}\n* Internship WhatsApp Link: ${whatsappUrl}\n* Timestamp: ${new Date().toISOString()}\n\nJoin WhatsApp Community: ${whatsappUrl}\n\nYour automated email dispatch pipeline is operational!\n\nWarm regards,\nRight-Minds Africa Hub Systems`;
+      const textBody = `Dear Administrator,\n\nThis is a live diagnostic test from your Right-Minds Africa Hub Automated Email API.\n\nDiagnostic Details:\n* Target Recipient: ${targetEmail}\n* Outbound Sender Name: ${senderOpts.senderName}\n* Active Transport / Sender: ${activeSender}\n* Direct Gmail/SMTP Active: ${senderOpts.smtpUser && senderOpts.smtpPass ? `YES (${senderOpts.smtpUser})` : "NO"}\n* Resend API Key Configured: ${(senderOpts.resendApiKey || process.env.RESEND_API_KEY) ? "YES (Live Resend Mode)" : "NO (Simulation Mode)"}\n* Internship WhatsApp Link: ${whatsappUrl}\n* Timestamp: ${new Date().toISOString()}\n\nJoin WhatsApp Community: ${whatsappUrl}\n\nYour automated email dispatch pipeline is operational!\n\nWarm regards,\nRight-Minds Africa Hub Systems`;
 
       const mailRes = await sendEmailViaResend(targetEmail, subject, textBody, senderOpts);
       const logEntry = await logEmailTransaction(db, {
@@ -278,8 +441,9 @@ export default async function handler(req, res) {
         registrationId: `TEST-${Date.now().toString().slice(-6)}`,
         programType: "volunteer",
         status: mailRes.success ? "success" : "failed",
+        sandboxRedirectTo: mailRes.sandboxRedirectTo || null,
         deliveryResult: mailRes.success
-          ? `Diagnostic test delivered: ref=${mailRes.messageId}${mailRes.simulated ? " (Simulation Mode - Set RESEND_API_KEY in env for live inbox delivery)" : ""}${mailRes.sandboxRedirectTo ? ` (Relayed via Resend sandbox owner ${mailRes.sandboxRedirectTo})` : ""}`
+          ? `Diagnostic test delivered: ref=${mailRes.messageId}${mailRes.simulated ? " (Simulation Mode)" : ""}${mailRes.sandboxRedirectTo ? ` (Relayed via Resend sandbox owner ${mailRes.sandboxRedirectTo})` : ""}`
           : `Diagnostic test failed: ${mailRes.error}`
       });
 
@@ -287,8 +451,9 @@ export default async function handler(req, res) {
         success: mailRes.success,
         status: mailRes.success ? "success" : "failed",
         simulated: !!mailRes.simulated,
-        hasResendKey: !!process.env.RESEND_API_KEY,
-        senderEmail: process.env.SENDER_EMAIL || "onboarding@resend.dev",
+        hasResendKey: !!(senderOpts.resendApiKey || process.env.RESEND_API_KEY),
+        hasSmtp: !!(senderOpts.smtpUser && senderOpts.smtpPass),
+        senderEmail: activeSender,
         sandboxRedirectTo: mailRes.sandboxRedirectTo || null,
         messageId: mailRes.messageId || null,
         logId: logEntry.id,
@@ -608,9 +773,14 @@ Right Minds Africa & Corper Impact Initiative`;
         subject,
         body: emailBody,
         status: dispatch.success ? "success" : "failed",
+        sandboxRedirectTo: dispatch.sandboxRedirectTo || null,
         timestamp: new Date().toISOString(),
         sentTime: new Date().toISOString(),
-        deliveryResult: dispatch.success ? `Delivered: Reference=${dispatch.messageId}` : `Error: ${dispatch.error}`
+        deliveryResult: dispatch.success
+          ? dispatch.sandboxRedirectTo
+            ? `Relayed to Sandbox Owner (${dispatch.sandboxRedirectTo}) because onboarding@resend.dev cannot send to external emails yet. Configure Gmail App Password or Verified Domain in Email Settings to deliver directly to ${applicantEmail}. Ref=${dispatch.messageId}`
+            : `Delivered directly to ${applicantEmail}: Reference=${dispatch.messageId}`
+          : `Error: ${dispatch.error}`
       });
 
       // Also notify the Super Admin / Operations inbox asynchronously
@@ -625,6 +795,7 @@ Right Minds Africa & Corper Impact Initiative`;
       return res.status(200).json({
         success: dispatch.success,
         simulated: !!dispatch.simulated,
+        sandboxRedirectTo: dispatch.sandboxRedirectTo || null,
         messageId: dispatch.messageId,
         whatsappLink: whatsappUrl,
         whatsappSupportLink: whatsappSupportUrl

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Mail, RefreshCw, Send, ShieldAlert, Search, ClipboardList, Calendar, Filter, CheckCircle2, XCircle, FileText } from "lucide-react";
-import { getEmailLogs, EmailLog } from "../lib/db";
+import { Mail, RefreshCw, Send, ShieldAlert, Search, ClipboardList, Calendar, Filter, CheckCircle2, XCircle, FileText, ExternalLink, AlertTriangle } from "lucide-react";
+import { getEmailLogs, EmailLog, saveRegistration } from "../lib/db";
 
 interface AdminEmailLogsProps {
   onLogAction: (msg: string) => void;
 }
+
+const DEFAULT_WHATSAPP_LINK = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
 
 export const AdminEmailLogs: React.FC<AdminEmailLogsProps> = ({ onLogAction }) => {
   const [logs, setLogs] = useState<EmailLog[]>([]);
@@ -19,6 +21,58 @@ export const AdminEmailLogs: React.FC<AdminEmailLogsProps> = ({ onLogAction }) =
   
   // Active selected log modal for detailed view
   const [selectedLog, setSelectedLog] = useState<EmailLog | null>(null);
+
+  // Quick Manual Confirmation Email Dispatch state (for sending immediately to any registrant who missed their mail)
+  const [quickName, setQuickName] = useState<string>("");
+  const [quickEmail, setQuickEmail] = useState<string>("");
+  const [quickRole, setQuickRole] = useState<string>("Internship & Volunteer Team");
+  const [quickSending, setQuickSending] = useState<boolean>(false);
+  const [quickStatus, setQuickStatus] = useState<{ ok: boolean; msg: string; gmailUrl?: string } | null>(null);
+
+  const buildGmailComposeUrl = (recipient: string, subject: string, body: string) => {
+    return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipient)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const handleQuickSendConfirmation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickEmail.trim()) return;
+    setQuickSending(true);
+    setQuickStatus(null);
+    const nameToUse = quickName.trim() || quickEmail.trim().split("@")[0];
+    const mailSubject = "Thank You for Applying – Right-Minds Africa Hub Internship & Volunteer Team";
+    const mailBody = `Dear ${nameToUse},\n\nThank you for your interest in joining the Right-Minds Africa Hub Internship & Volunteer Team! We deeply appreciate your willingness to contribute your skills toward shaping a generation across Africa.\n\n* Applicant Name: ${nameToUse}\n* Primary Role / Department: ${quickRole}\n* Official WhatsApp Community Link: ${DEFAULT_WHATSAPP_LINK}\n\nPlease click the link above to join our official WhatsApp community immediately for onboarding updates and orientation schedules.\n\nWarm regards,\nRight-Minds Africa Hub & Corper Impact Initiative Team`;
+    const gmailComposeUrl = buildGmailComposeUrl(quickEmail.trim(), mailSubject, mailBody);
+
+    try {
+      await saveRegistration({
+        fullName: nameToUse,
+        email: quickEmail.trim(),
+        phone: "Dispatched via Admin Quick Send",
+        location: "Nigeria",
+        profileType: "volunteer",
+        programType: "internship",
+        programName: "Right-Minds Africa Hub Internship & Volunteer Application",
+        department: quickRole,
+        primaryRole: quickRole,
+        whatsappLink: DEFAULT_WHATSAPP_LINK
+      });
+      await fetchLogs();
+      onLogAction(`✅ [QUICK DISPATCH] Confirmation email & WhatsApp link triggered for ${quickEmail.trim()}`);
+      setQuickStatus({
+        ok: true,
+        msg: `Confirmation email triggered for ${quickEmail.trim()}! You can also click "Open in Gmail" on the right to send directly from your Gmail inbox if SMTP/Domain is not yet configured.`,
+        gmailUrl: gmailComposeUrl
+      });
+    } catch (err: any) {
+      setQuickStatus({
+        ok: false,
+        msg: err?.message || "Failed to trigger confirmation email.",
+        gmailUrl: gmailComposeUrl
+      });
+    } finally {
+      setQuickSending(false);
+    }
+  };
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -49,33 +103,10 @@ export const AdminEmailLogs: React.FC<AdminEmailLogsProps> = ({ onLogAction }) =
       const data = await response.json();
       if (response.ok && data.success) {
         onLogAction(`✓ [EMAIL SERVICE] Email trace retry completed successfully match ID: ${logId}`);
-        // Quick update without full loader flicker
-        setLogs((prev) =>
-          prev.map((log) =>
-            log.id === logId
-              ? {
-                  ...log,
-                  status: "success",
-                  sentTime: new Date().toISOString(),
-                  deliveryResult: "Manually re-triggered and resolved matching server ID.",
-                }
-              : log
-          )
-        );
-        
-        // Also update selected modal if open
-        if (selectedLog && selectedLog.id === logId) {
-          setSelectedLog(prev => prev ? {
-            ...prev,
-            status: "success",
-            sentTime: new Date().toISOString(),
-            deliveryResult: "Manually re-triggered and resolved matching server ID.",
-          } : null);
-        }
+        await fetchLogs();
       } else {
         const errorMsg = data.error || "Mail transmission declined by backend.";
         onLogAction(`❌ [EMAIL SERVICE] Re-dispatch failed for log ID ${logId}. Error: ${errorMsg}`);
-        alert(`Failed to resend: ${errorMsg}`);
       }
     } catch (err: any) {
       console.error("Exception of email dispatch:", err);
@@ -107,7 +138,6 @@ export const AdminEmailLogs: React.FC<AdminEmailLogsProps> = ({ onLogAction }) =
     if (programFilter !== "all") {
       const logProg = (log.programType || "").toLowerCase();
       const filterProg = programFilter.toLowerCase();
-      // Handle potential young leaders naming match
       if (filterProg === "young-leaders" && (logProg.includes("young") || logProg.includes("leader"))) {
         // match
       } else if (filterProg === "yap" && (logProg.includes("yap") || logProg.includes("conference"))) {
@@ -175,6 +205,92 @@ export const AdminEmailLogs: React.FC<AdminEmailLogsProps> = ({ onLogAction }) =
           Reload Audits
         </button>
       </div>
+
+      {/* Quick Send Confirmation Email to Registrant Card */}
+      <form
+        onSubmit={handleQuickSendConfirmation}
+        className="bg-gradient-to-r from-[#103D2E] to-[#16523e] p-5 rounded-2xl text-white space-y-3 text-left shadow-sm"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
+              <Send size={14} />
+              Send Confirmation Email &amp; WhatsApp Link to Any Registrant Now
+            </h4>
+            <p className="text-[11px] text-emerald-100/90 mt-0.5">
+              Did someone register on the Google Form and miss their confirmation mail? Enter their name and email below to dispatch their official confirmation email and WhatsApp link immediately.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3 pt-1">
+          <input
+            type="text"
+            value={quickName}
+            onChange={(e) => setQuickName(e.target.value)}
+            placeholder="Registrant Full Name"
+            className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none"
+          />
+          <input
+            type="email"
+            required
+            value={quickEmail}
+            onChange={(e) => setQuickEmail(e.target.value)}
+            placeholder="Registrant Email Address *"
+            className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none"
+          />
+          <input
+            type="text"
+            value={quickRole}
+            onChange={(e) => setQuickRole(e.target.value)}
+            placeholder="Role / Program (e.g. Graphic Designer)"
+            className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={quickSending || !quickEmail.trim()}
+              className="flex-1 px-4 py-2.5 bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-slate-950 rounded-xl text-2xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Send size={12} />
+              <span>{quickSending ? "Sending..." : "Send Confirmation"}</span>
+            </button>
+            {quickEmail.trim() && (
+              <a
+                href={buildGmailComposeUrl(
+                  quickEmail.trim(),
+                  "Thank You for Applying – Right-Minds Africa Hub Internship & Volunteer Team",
+                  `Dear ${quickName.trim() || "Applicant"},\n\nThank you for your interest in joining the Right-Minds Africa Hub Internship & Volunteer Team!\n\n* Applicant Name: ${quickName.trim() || "Applicant"}\n* Role / Track: ${quickRole}\n* Official WhatsApp Community Link: ${DEFAULT_WHATSAPP_LINK}\n\nPlease click the WhatsApp link above to join our official onboarding group immediately.\n\nWarm regards,\nRight-Minds Africa Hub Team`
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-2.5 bg-white/15 hover:bg-white/25 text-white border border-white/20 rounded-xl text-2xs font-extrabold uppercase tracking-wider inline-flex items-center gap-1 shrink-0"
+                title="Open pre-filled email in Gmail to send directly"
+              >
+                <span>Gmail</span>
+                <ExternalLink size={11} />
+              </a>
+            )}
+          </div>
+        </div>
+
+        {quickStatus && (
+          <div className="p-3 bg-white/10 border border-white/20 rounded-xl text-xs flex flex-wrap items-center justify-between gap-2">
+            <span>{quickStatus.msg}</span>
+            {quickStatus.gmailUrl && (
+              <a
+                href={quickStatus.gmailUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 bg-[#25D366] text-slate-950 font-black text-2xs uppercase tracking-wider rounded-lg inline-flex items-center gap-1"
+              >
+                <span>Send Directly in Gmail</span>
+                <ExternalLink size={11} />
+              </a>
+            )}
+          </div>
+        )}
+      </form>
 
       {/* Dynamic Filters Bar */}
       <div className="bg-white p-5 rounded-2xl border border-slate-150 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-left">
@@ -329,16 +445,26 @@ export const AdminEmailLogs: React.FC<AdminEmailLogsProps> = ({ onLogAction }) =
 
                       {/* Status */}
                       <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-3xs font-black uppercase ${
-                            isSuccess
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : "bg-rose-50 text-rose-700 border border-rose-200"
-                          }`}
-                        >
-                          {isSuccess ? <CheckCircle2 size={9} /> : <XCircle size={9} />}
-                          {log.status}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-3xs font-black uppercase ${
+                              log.sandboxRedirectTo
+                                ? "bg-amber-50 text-amber-800 border border-amber-300"
+                                : isSuccess
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : "bg-rose-50 text-rose-700 border border-rose-200"
+                            }`}
+                          >
+                            {log.sandboxRedirectTo ? (
+                              <AlertTriangle size={9} />
+                            ) : isSuccess ? (
+                              <CheckCircle2 size={9} />
+                            ) : (
+                              <XCircle size={9} />
+                            )}
+                            {log.sandboxRedirectTo ? "sandbox relay" : log.status}
+                          </span>
+                        </div>
                       </td>
 
                       {/* Sent Time */}
@@ -359,23 +485,40 @@ export const AdminEmailLogs: React.FC<AdminEmailLogsProps> = ({ onLogAction }) =
 
                       {/* Actions */}
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => handleRetrySend(log.id)}
-                          disabled={isRetrying}
-                          className={`px-2.5 py-1.5 rounded-lg text-3xs font-black uppercase tracking-wider transition-all flex items-center gap-1 mx-auto cursor-pointer shadow-1xs ${
-                            isSuccess
-                              ? "bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100"
-                              : "bg-rose-600 border border-rose-700 text-white hover:bg-rose-700"
-                          }`}
-                          title="Trigger instant manual retry or resend of confirmation email"
-                        >
-                          {isRetrying ? (
-                            <RefreshCw size={10} className="animate-spin" />
-                          ) : (
-                            <Send size={10} />
-                          )}
-                          <span>{isRetrying ? "Resending..." : isSuccess ? "re-send" : "retry log"}</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => handleRetrySend(log.id)}
+                            disabled={isRetrying}
+                            className={`px-2.5 py-1.5 rounded-lg text-3xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-1xs ${
+                              isSuccess
+                                ? "bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100"
+                                : "bg-rose-600 border border-rose-700 text-white hover:bg-rose-700"
+                            }`}
+                            title="Trigger instant manual retry or resend of confirmation email"
+                          >
+                            {isRetrying ? (
+                              <RefreshCw size={10} className="animate-spin" />
+                            ) : (
+                              <Send size={10} />
+                            )}
+                            <span>{isRetrying ? "Resending..." : isSuccess ? "re-send" : "retry log"}</span>
+                          </button>
+
+                          <a
+                            href={buildGmailComposeUrl(
+                              log.recipient,
+                              log.subject,
+                              log.body || `Dear Applicant,\n\nThank you for applying to Right-Minds Africa Hub!\n\nOfficial WhatsApp Community Link: ${DEFAULT_WHATSAPP_LINK}\n\nWarm regards,\nRight-Minds Africa Hub Team`
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1.5 rounded-lg text-3xs font-black uppercase tracking-wider bg-[#103D2E] text-amber-300 hover:bg-[#1b503f] inline-flex items-center gap-1"
+                            title="Send this exact confirmation email directly via your Gmail inbox"
+                          >
+                            <span>Gmail</span>
+                            <ExternalLink size={9} />
+                          </a>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -441,19 +584,32 @@ export const AdminEmailLogs: React.FC<AdminEmailLogsProps> = ({ onLogAction }) =
               {/* Message Body Content if exists */}
               {selectedLog.body && (
                 <div className="space-y-1">
-                  <span className="block text-3xs font-extrabold uppercase text-slate-400 tracking-wider font-mono">Simulated Outbound Body</span>
+                  <span className="block text-3xs font-extrabold uppercase text-slate-400 tracking-wider font-mono">Outbound Message Body</span>
                   <pre className="text-2xs bg-slate-900 text-slate-100 p-4 rounded-xl font-mono leading-relaxed max-h-56 overflow-y-auto whitespace-pre-wrap">{selectedLog.body}</pre>
                 </div>
               )}
             </div>
 
-            <div className="bg-slate-50 p-4 border-t border-slate-150 flex justify-end gap-2 shrink-0">
+            <div className="bg-slate-50 p-4 border-t border-slate-150 flex flex-wrap justify-end gap-2 shrink-0">
               <button 
                 onClick={() => setSelectedLog(null)} 
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-2xs font-extrabold uppercase tracking-wider cursor-pointer"
               >
                 Close View
               </button>
+              <a
+                href={buildGmailComposeUrl(
+                  selectedLog.recipient,
+                  selectedLog.subject,
+                  selectedLog.body || `Dear Applicant,\n\nThank you for applying to Right-Minds Africa Hub!\n\nOfficial WhatsApp Community Link: ${DEFAULT_WHATSAPP_LINK}\n\nWarm regards,\nRight-Minds Africa Hub Team`
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 rounded-xl text-2xs font-extrabold uppercase tracking-wider inline-flex items-center gap-1.5"
+              >
+                <span>Send Directly in Gmail</span>
+                <ExternalLink size={12} />
+              </a>
               <button 
                 onClick={() => handleRetrySend(selectedLog.id)}
                 disabled={retryingLogId !== null}

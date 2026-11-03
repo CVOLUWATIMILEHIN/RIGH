@@ -168,6 +168,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
   const [gfRole, setGfRole] = useState("Graphic Designer");
   const [gfSending, setGfSending] = useState(false);
   const [gfError, setGfError] = useState<string | null>(null);
+  const [showPostSubmitModal, setShowPostSubmitModal] = useState(false);
 
   // Export submissions to Google Sheets CSV format
   const handleExportToGoogleSheets = async () => {
@@ -621,6 +622,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           year: "numeric"
         })
       });
+      setShowPostSubmitModal(false);
 
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err: any) {
@@ -1044,30 +1046,82 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
               <div className="w-full bg-white overflow-x-hidden">
                 <div className="h-1.5 w-full bg-gradient-to-r from-[#0E3A2F] via-emerald-700 to-amber-500" />
 
-                {/* Top Quick Notice Bar so applicants know how to get their email & WhatsApp link or switch to Direct Form */}
-                <div className="px-4 sm:px-8 py-3.5 bg-[#FAF8F3] border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2 text-slate-700 font-medium">
-                    <Mail size={15} className="text-[#0E3A2F] shrink-0" />
-                    <span>
-                      After submitting the form below, claim your <strong>Confirmation Email</strong> and join our <strong>Official WhatsApp Group</strong> in Step 2 below.
-                    </span>
+                {/* Top Quick Confirmation Email & WhatsApp Bar right ABOVE the Google Form so no applicant misses it */}
+                <div className="p-4 sm:p-6 bg-gradient-to-r from-[#0E3A2F] via-[#12493b] to-[#0b2e25] text-white border-b border-amber-400/40 space-y-3">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-amber-400/20 text-amber-300 border border-amber-400/40 px-2.5 py-0.5 rounded-full font-mono">
+                        <Mail size={11} /> Instant Email Confirmation &amp; WhatsApp Onboarding
+                      </span>
+                      <p className="text-xs sm:text-sm text-emerald-100 font-medium">
+                        Enter your Name &amp; Email here (before or right after submitting the Google Form below) to immediately receive your <strong>Confirmation Email</strong> and join our <strong>Official WhatsApp Community</strong>:
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <a
+                        href={whatsappGroupUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-1.5 shadow-sm"
+                      >
+                        <MessageCircle size={14} className="fill-slate-950" />
+                        <span>Join WhatsApp Group</span>
+                        <ExternalLink size={12} />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setFormMode("interactive")}
+                        className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold text-[11px] uppercase tracking-wider rounded-xl cursor-pointer transition-all"
+                      >
+                        Use Direct Portal Form
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <a
-                      href="#post-submission-whatsapp-email"
-                      className="px-3 py-1.5 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-extrabold text-[11px] uppercase tracking-wider rounded-lg inline-flex items-center gap-1.5 transition-all"
+
+                  <form onSubmit={handleGoogleFormQuickConfirm} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 pt-1">
+                    <input
+                      type="text"
+                      required
+                      value={gfName}
+                      onChange={(e) => setGfName(e.target.value)}
+                      placeholder="Your Full Name *"
+                      className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <input
+                      type="email"
+                      required
+                      value={gfEmail}
+                      onChange={(e) => setGfEmail(e.target.value)}
+                      placeholder="Your Email Address *"
+                      className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <input
+                      type="tel"
+                      value={gfPhone}
+                      onChange={(e) => setGfPhone(e.target.value)}
+                      placeholder="Phone / WhatsApp Number"
+                      className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <select
+                      value={gfRole}
+                      onChange={(e) => setGfRole(e.target.value)}
+                      className="px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
                     >
-                      <MessageCircle size={13} />
-                      <span>Get Email &amp; WhatsApp Link &darr;</span>
-                    </a>
+                      {VOLUNTEER_ROLES.flatMap(g => g.roles).map(role => (
+                        <option key={role.id} value={role.label}>
+                          {role.label}
+                        </option>
+                      ))}
+                    </select>
                     <button
-                      type="button"
-                      onClick={() => setFormMode("interactive")}
-                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-[#0E3A2F] border border-slate-200 font-bold text-[11px] uppercase tracking-wider rounded-lg cursor-pointer transition-all"
+                      type="submit"
+                      disabled={gfSending}
+                      className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-sm inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all disabled:opacity-60"
                     >
-                      Use Direct Portal Form
+                      {gfSending ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                      <span>{gfSending ? "Sending..." : "Send My Confirmation Mail"}</span>
                     </button>
-                  </div>
+                  </form>
                 </div>
 
                 {/* Auto-detected Google Form submission banner */}
@@ -1083,7 +1137,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                           Google Form Submitted! Join WhatsApp &amp; Receive Your Confirmation Mail
                         </h4>
                         <p className="text-xs text-slate-600 mt-0.5">
-                          Click the green button to join our official WhatsApp community immediately, and confirm your email below to receive your official confirmation email.
+                          Click the green button to join our official WhatsApp community immediately, and confirm your email to receive your official confirmation email.
                         </p>
                       </div>
                     </div>
@@ -1098,13 +1152,14 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                         <span>Join WhatsApp Group</span>
                         <ExternalLink size={13} />
                       </a>
-                      <a
-                        href="#post-submission-whatsapp-email"
-                        className="px-4 py-3 bg-[#0E3A2F] hover:bg-[#0c3127] text-white font-extrabold text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-1.5"
+                      <button
+                        type="button"
+                        onClick={() => setShowPostSubmitModal(true)}
+                        className="px-4 py-3 bg-[#0E3A2F] hover:bg-[#0c3127] text-white font-extrabold text-xs uppercase tracking-wider rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
                       >
                         <Mail size={14} />
                         <span>Get Confirmation Email</span>
-                      </a>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1132,10 +1187,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                       iframeLoadCount.current += 1;
                       if (iframeLoadCount.current >= 2) {
                         setGoogleFormSubmitted(true);
-                        const confirmSection = document.getElementById("post-submission-whatsapp-email");
-                        if (confirmSection) {
-                          confirmSection.scrollIntoView({ behavior: "smooth", block: "center" });
-                        }
+                        setShowPostSubmitModal(true);
                       }
                     }}
                     className="block w-full min-h-[5096px] bg-white border-0 m-0 p-0 overflow-x-hidden"
@@ -1648,6 +1700,149 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           </div>
         </>
       )}
+
+      {/* =========================================================================
+          AUTO-POPUP POST-SUBMISSION CONFIRMATION EMAIL & WHATSAPP MODAL
+          ========================================================================= */}
+      <AnimatePresence>
+        {showPostSubmitModal && !submittedApp && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              className="bg-gradient-to-br from-[#0E3A2F] via-[#12493b] to-[#0b2e25] text-white border-2 border-amber-400 rounded-3xl p-6 sm:p-8 max-w-xl w-full text-left shadow-2xl space-y-6 relative"
+            >
+              <button
+                type="button"
+                onClick={() => setShowPostSubmitModal(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+
+              <div className="space-y-2 pr-6">
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-[#25D366]/20 text-emerald-300 border border-[#25D366]/40 px-3 py-1 rounded-full font-mono">
+                  <CheckCircle2 size={12} /> Google Form Response Received!
+                </span>
+                <h3 className="text-xl sm:text-2xl font-extrabold uppercase font-display tracking-tight text-white">
+                  Final Step: Get Your Confirmation Mail &amp; Join WhatsApp
+                </h3>
+                <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
+                  Enter your name and email below so our automated system immediately sends your <strong>Official Application Confirmation Mail</strong> and opens our <strong>Official WhatsApp Community</strong>.
+                </p>
+              </div>
+
+              <div className="p-4 bg-white/10 border border-white/15 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold block">
+                    Direct WhatsApp Community Link:
+                  </span>
+                  <span className="text-xs text-emerald-100">Join the onboarding group right away:</span>
+                </div>
+                <a
+                  href={whatsappGroupUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-5 py-3 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md inline-flex items-center justify-center gap-2 shrink-0"
+                >
+                  <MessageCircle size={16} className="fill-slate-950" />
+                  <span>Join WhatsApp Group</span>
+                  <ExternalLink size={13} />
+                </a>
+              </div>
+
+              <form onSubmit={handleGoogleFormQuickConfirm} className="space-y-3.5">
+                {gfError && (
+                  <div className="p-3 bg-rose-500/20 border border-rose-400/40 rounded-xl text-xs text-rose-100 flex items-center gap-2">
+                    <AlertCircle size={15} className="shrink-0 text-rose-300" />
+                    <span>{gfError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={gfName}
+                      onChange={(e) => setGfName(e.target.value)}
+                      placeholder="Enter your full name"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                      Email Address *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={gfEmail}
+                      onChange={(e) => setGfEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                      Phone / WhatsApp Number
+                    </label>
+                    <input
+                      type="tel"
+                      value={gfPhone}
+                      onChange={(e) => setGfPhone(e.target.value)}
+                      placeholder="+234 800 000 0000"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                      Primary Role Selected
+                    </label>
+                    <select
+                      value={gfRole}
+                      onChange={(e) => setGfRole(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      {VOLUNTEER_ROLES.flatMap(g => g.roles).map(role => (
+                        <option key={role.id} value={role.label}>
+                          {role.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={gfSending}
+                  className="w-full py-3.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md inline-flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-60"
+                >
+                  {gfSending ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Sending Confirmation Email...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail size={16} />
+                      <span>Send My Confirmation Email &amp; Open WhatsApp</span>
+                      <ArrowRight size={15} />
+                    </>
+                  )}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* =========================================================================
           PRIVACY NOTICE MODAL

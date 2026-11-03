@@ -5112,8 +5112,14 @@ export async function saveCMSConfig(config: any): Promise<void> {
 export interface EmailSettings {
   id: string;
   senderName: string;
+  senderEmail?: string;
   replyTo: string;
   notificationEmail: string;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  resendApiKey?: string;
   templates: {
     ciiWelcomeSubject: string;
     ciiWelcomeBody: string;
@@ -5147,13 +5153,20 @@ export interface EmailLog {
   registrationId?: string;
   programType?: string;
   body?: string;
+  sandboxRedirectTo?: string | null;
 }
 
 export const DEFAULT_EMAIL_SETTINGS: EmailSettings = {
   id: "email_settings",
   senderName: "Right Minds Africa",
+  senderEmail: "",
   replyTo: "info@rightmindsafrica.org",
   notificationEmail: "olosundelouis@gmail.com",
+  smtpUser: "rightmindsafrica@gmail.com",
+  smtpPass: "",
+  smtpHost: "smtp.gmail.com",
+  smtpPort: 465,
+  resendApiKey: "",
   templates: {
     ciiWelcomeSubject: "Registration Received – Corper Impact Initiative (CII)",
     ciiWelcomeBody: "Dear {{fullName}},\n\nThank you for registering for Corper Impact Initiative (CII).\n\nWe have successfully received your application.\n\nRegistration Details:\n* Full Name: {{fullName}}\n* Registration ID: {{referenceNumber}}\n* Program Name: {{programName}}\n* Submission Date: {{submissionDate}}\n\n🚀 JOIN YOUR COMMUNITY CHANNELS:\nWhile our team reviews your application, you are highly encouraged to join our active community channels to get started, receive instant helper notices, and network with fellow participants:\n* WhatsApp Waitlist Link: https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI\n* Telegram Cohort Gateway: https://t.me/+_iA-Xr3CqEoyYzhk\n\nMain Portal Link: https://rightmindsafrica.org/\n\nWhat Happens Next?\n* Our team will review your registration.\n* You will receive updates via email.\n* Further instructions will be communicated when necessary.\n\nIf you have any questions, please contact us.\n\nRegards,\nRight Minds Africa & Corper Impact Initiative",
@@ -5169,8 +5182,8 @@ export const DEFAULT_EMAIL_SETTINGS: EmailSettings = {
     paymentRejectedBody: "Dear {{fullName}},\n\nWe were unable to verify your payment for {{programName}}.\n\nYour submission was flagged during audit.\n\nAudit Remarks:\n{{remarks}}\n\nDetails:\n* Registration ID: {{referenceNumber}}\n* Payment Reference: {{paymentReference}}\n\nPlease re-check your payment reference or re-upload your receipt screenshot in your portal.\n\nRegards,\nRight Minds Africa team",
     courseEnrollmentSubject: "Course Enrollment Confirmation - {{courseTitle}}",
     courseEnrollmentBody: "Dear {{studentName}},\n\nYou have been successfully enrolled in {{courseTitle}}!\n\nHere are your transaction details:\n* Course Name: {{courseTitle}}\n* Payment Reference: {{paymentReference}}\n* Student Email: {{studentEmail}}\n\nYou can start learning immediately using the links below:\n* Link to Learning Portal: {{learningPortalLink}}\n* Link to Student Dashboard: {{dashboardLink}}\n\n🚀 JOIN THE OFFICIAL COMMUNITY:\n* WhatsApp Community Group: https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC",
-    volunteerWelcomeSubject: "Application Received – Right-Minds Africa Hub Internship & Volunteer Team",
-    volunteerWelcomeBody: "Dear {{fullName}},\n\nThank you for applying to join the Right-Minds Africa Hub Internship & Volunteer Team!\n\nYour application has been successfully received and logged for review. Here is a summary of your submission:\n* Applicant Name: {{fullName}}\n* Application Reference ID: {{referenceNumber}}\n* Primary Role / Department: {{department}}\n* Location: {{stateCode}}\n* Submission Date: {{submissionDate}}\n* Official WhatsApp Link: {{whatsappLink}}\n\nJoin WhatsApp Community: {{whatsappLink}}\n\nWhat Happens Next?\n1. Click the green button or WhatsApp link above ({{whatsappLink}}) to join our official WhatsApp community immediately for onboarding updates, orientation schedules, and team announcements.\n2. Our coordinating team will review your application details and introduction video.\n3. We will contact you via email and WhatsApp regarding the next steps in your onboarding process.\n\nWarm regards,\nRight-Minds Africa Hub & Corper Impact Initiative Team"
+    volunteerWelcomeSubject: "Thank You for Applying – Right-Minds Africa Hub Internship & Volunteer Team",
+    volunteerWelcomeBody: "Dear {{fullName}},\n\nThank you for your interest in joining the Right-Minds Africa Hub Internship & Volunteer Team! We deeply appreciate your willingness to contribute your skills toward shaping a generation across Africa.\n\nYour application has been successfully received and logged for review. Here is a summary of your submission:\n* Applicant Name: {{fullName}}\n* Application Reference ID: {{referenceNumber}}\n* Primary Role / Department: {{department}}\n* Location: {{stateCode}}\n* Submission Date: {{submissionDate}}\n* Direct WhatsApp Support & Community Link: {{whatsappLink}}\n\nJoin WhatsApp Community: {{whatsappLink}}\n\nWhatsApp Support Link: {{whatsappLink}}\n\nWhat Happens Next & Support for Queries:\n1. Click the green button or WhatsApp link above ({{whatsappLink}}) to join our official WhatsApp community immediately for onboarding updates, orientation schedules, and direct support for any queries.\n2. Our coordinating team will review your application details and introduction video.\n3. We will contact you via email and WhatsApp regarding the next steps in your onboarding process.\n\nWarm regards,\nRight-Minds Africa Hub & Corper Impact Initiative Team"
   },
   ciiCounter: 0,
   rmaCounter: 0,
@@ -5233,15 +5246,20 @@ export async function saveEmailSettings(config: EmailSettings): Promise<void> {
     } catch (e) {}
   }
 
-  // Queue background write
-  queueWrite({
-    type: "set",
-    collection: "settings",
-    docId: "email_settings",
-    data: updated
-  }).catch((err) => {
-    console.warn("Firestore email settings copy queue deferred:", err);
-  });
+  // Direct write to Firestore immediately so backend /api/email/trigger reads new SMTP/Resend settings right away
+  try {
+    const { doc, setDoc } = await import("firebase/firestore");
+    const db = await getFirestoreDb();
+    await setDoc(doc(db, "settings", "email_settings"), updated, { merge: true });
+  } catch (err) {
+    console.warn("Direct Firestore email_settings write deferred, queuing:", err);
+    queueWrite({
+      type: "setWithMerge",
+      collection: "settings",
+      docId: "email_settings",
+      data: updated
+    }).catch(() => null);
+  }
 }
 
 export async function getEmailLogs(): Promise<EmailLog[]> {

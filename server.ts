@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import dns from "dns";
 
 // Support both local and global DNS lookups gracefully without latency
@@ -991,12 +992,72 @@ function parseTemplate(template: string, data: any): string {
   return parsed;
 }
 
-// Unified secure mailer supporting HTML layout delivery + simulation
-async function sendEmailViaResend(to: string, subject: string, textBody: string, senderOpts: { senderName: string, replyTo: string }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const senderEmail = process.env.SENDER_EMAIL || "onboarding@resend.dev";
+async function logEmailTransaction(db: any, entry: Record<string, any>) {
+  const logId = entry.id || `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const fullEntry = {
+    id: logId,
+    timestamp: new Date().toISOString(),
+    sentTime: new Date().toISOString(),
+    ...entry
+  };
+  if (db) {
+    await setDoc(doc(db, "email_logs", logId), fullEntry, { merge: true });
+  }
+  return fullEntry;
+}
+
+function normalizeGoogleFormWebhookPayload(rawPayload: any): Record<string, any> {
+  if (!rawPayload || typeof rawPayload !== "object") return {};
+  const out: Record<string, any> = { ...rawPayload };
+  const named = rawPayload.namedValues || rawPayload.responses || null;
+  if (named && typeof named === "object") {
+    for (const [question, rawVal] of Object.entries(named)) {
+      const qLower = question.toLowerCase();
+      const val = Array.isArray(rawVal) ? String(rawVal[0] || "").trim() : String(rawVal || "").trim();
+      if (!val) continue;
+      if (!out.email && (qLower.includes("email") || val.includes("@"))) {
+        out.email = val;
+      } else if (!out.fullName && (qLower.includes("name") || qLower.includes("applicant"))) {
+        out.fullName = val;
+      } else if (!out.phone && (qLower.includes("phone") || qLower.includes("whatsapp") || qLower.includes("number") || qLower.includes("mobile"))) {
+        out.phone = val;
+      } else if (!out.primaryRole && (qLower.includes("role") || qLower.includes("department") || qLower.includes("unit") || qLower.includes("position"))) {
+        out.primaryRole = val;
+        out.department = val;
+      } else if (!out.location && (qLower.includes("location") || qLower.includes("state") || qLower.includes("city"))) {
+        out.location = val;
+      }
+    }
+  }
+  return out;
+}
+
+// Unified secure mailer supporting Gmail/SMTP (delivers to any external email), Resend, and simulation
+async function sendEmailViaResend(
+  to: string,
+  subject: string,
+  textBody: string,
+  senderOpts: {
+    senderName: string;
+    senderEmail?: string;
+    replyTo: string;
+    smtpUser?: string;
+    smtpPass?: string;
+    smtpHost?: string;
+    smtpPort?: number;
+    resendApiKey?: string;
+  }
+) {
+  const apiKey = (senderOpts.resendApiKey || process.env.RESEND_API_KEY || "").trim();
+  const configuredSender = (senderOpts.senderEmail || process.env.SENDER_EMAIL || "").trim();
+  const senderEmail = configuredSender || "onboarding@resend.dev";
   const fromNameAndEmail = `"${senderOpts.senderName}" <${senderEmail}>`;
   const fallbackFrom = `"${senderOpts.senderName}" <onboarding@resend.dev>`;
+
+  const smtpUser = (senderOpts.smtpUser || process.env.GMAIL_USER || process.env.SMTP_USER || "").trim();
+  const smtpPass = (senderOpts.smtpPass || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "").replace(/\s+/g, "");
+  const smtpHost = (senderOpts.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com").trim();
+  const smtpPort = Number(senderOpts.smtpPort || process.env.SMTP_PORT || 465);
 
   // Helper build function for professional email layout
   const buildHtmlBody = (banner: string, bodyText: string) => `
@@ -1091,6 +1152,45 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
     </html>
   `;
 
+  // Priority 1: Direct Gmail / SMTP Delivery via Nodemailer (Delivers to ANY external email address without domain verification limits)
+  if (smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost || "smtp.gmail.com",
+        port: smtpPort || 465,
+        secure: (smtpPort || 465) === 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        }
+      });
+      const info = await transporter.sendMail({
+        from: `"${senderOpts.senderName}" <${smtpUser}>`,
+        to,
+        replyTo: senderOpts.replyTo || smtpUser,
+        subject,
+        text: textBody,
+        html: buildHtmlBody("", textBody)
+      });
+      return {
+        success: true,
+        simulated: false,
+        provider: "gmail_smtp",
+        messageId: info.messageId || `SMTP-${Date.now()}`
+      };
+    } catch (smtpErr: any) {
+      console.warn("[Email Mailer] Gmail/SMTP transport warning, falling back to Resend:", smtpErr?.message || smtpErr);
+      if (!apiKey) {
+        return {
+          success: false,
+          simulated: false,
+          provider: "gmail_smtp",
+          error: `Gmail SMTP error: ${smtpErr?.message || String(smtpErr)}`
+        };
+      }
+    }
+  }
+
   if (apiKey) {
     const resend = new Resend(apiKey);
     try {
@@ -1107,7 +1207,7 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
       if (error) {
         throw new Error(error.message || JSON.stringify(error));
       }
-      return { success: true, simulated: false, messageId: data?.id };
+      return { success: true, simulated: false, provider: "resend", messageId: data?.id };
     } catch (err: any) {
       console.warn("[Email Mailer] Primary Resend dispatch returned notice:", err?.message || err);
       let errMsg = err?.message || String(err);
@@ -1124,7 +1224,7 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
             replyTo: senderOpts.replyTo
           });
           if (!stage2Err && stage2Data?.id) {
-            return { success: true, simulated: false, messageId: stage2Data.id };
+            return { success: true, simulated: false, provider: "resend", messageId: stage2Data.id };
           }
           if (stage2Err) {
             errMsg = stage2Err.message || JSON.stringify(stage2Err);
@@ -1147,8 +1247,9 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
         const retryText = `[SANDBOX TRIAL REDIRECT] Originally destined for <${to}>, forwarded due to Resend sandbox mode.\n\n${textBody}`;
         const retryBanner = `
           <div style="background-color: #FEF3C7; border: 1px solid #D97706; padding: 12px; margin-bottom: 20px; border-radius: 8px; font-size: 11px; color: #92400E; line-height: 1.4; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-            <strong>SANDBOX RESEND REDIRECT</strong><br/>
-            This official confirmation email was addressed to <code>${to}</code>. It was routed to your verified Resend account <code>${retryTo}</code> because Resend is currently in sandbox mode (<code>onboarding@resend.dev</code>). Once your custom domain is verified in Resend and set in <code>SENDER_EMAIL</code>, emails go directly to every applicant without this banner.
+            <strong>SANDBOX RESEND REDIRECT (EXTERNAL RECIPIENT BLOCKED BY RESEND TRIAL)</strong><br/>
+            This official confirmation email was addressed to <code>${to}</code>. It was routed to your verified Resend account <code>${retryTo}</code> because Resend is currently in sandbox mode (<code>onboarding@resend.dev</code>).<br/>
+            <strong>How to send directly to every applicant immediately:</strong> Go to <strong>Admin Portal &rarr; Email Settings</strong> and enter a 16-character <strong>Gmail App Password</strong> (or verify your domain in Resend).
           </div>
         `;
         try {
@@ -1161,7 +1262,13 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
             replyTo: senderOpts.replyTo
           });
           if (!fallbackError && fallbackData?.id) {
-            return { success: true, simulated: false, messageId: fallbackData.id, sandboxRedirectTo: retryTo };
+            return {
+              success: true,
+              simulated: false,
+              provider: "resend_sandbox_redirect",
+              messageId: fallbackData.id,
+              sandboxRedirectTo: retryTo
+            };
           }
         } catch (fallbackErr: any) {
           console.error("[Email Mailer] Redirection defense retry failed:", fallbackErr);
@@ -1181,27 +1288,35 @@ async function sendEmailViaResend(to: string, subject: string, textBody: string,
     console.log(`==================================================\n`);
     
     await new Promise(resolve => setTimeout(resolve, 300));
-    return { success: true, simulated: true, messageId: `SIM-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
+    return { success: true, simulated: true, provider: "simulation", messageId: `SIM-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
   }
 }
 
 // Trigger post endpoint processing standard automated workflows
 app.post("/api/email/trigger", async (req, res) => {
   try {
-    const event = req.body?.event || req.body?.type;
+    const rawEvent = req.body?.event || req.body?.type || (req.body?.namedValues ? "GOOGLE_FORM_WEBHOOK" : "");
+    const event = rawEvent === "GOOGLE_FORM_WEBHOOK" ? "VOLUNTEER_APPLICATION_SUBMITTED" : rawEvent;
     const registrationId = req.body?.registrationId;
-    const payload = req.body?.payload || req.body?.record || req.body || {};
+    const rawPayload = req.body?.payload || req.body?.record || req.body || {};
+    const payload = normalizeGoogleFormWebhookPayload(rawPayload);
     if (!event) return res.status(400).json({ error: "Missing action event marker." });
 
     console.log(`[Email Engine] Trigger received for event: [${event}]`);
     
     const db = getServerFirestore();
-    const settings = await loadEmailSettings(db);
+    const settings: any = await loadEmailSettings(db);
     
     const senderOpts = {
-      senderName: settings.senderName,
-      replyTo: settings.replyTo,
-      notificationEmail: settings.notificationEmail
+      senderName: settings.senderName || "Right Minds Africa",
+      senderEmail: settings.senderEmail || process.env.SENDER_EMAIL || "onboarding@resend.dev",
+      replyTo: settings.replyTo || "info@rightmindsafrica.org",
+      notificationEmail: settings.notificationEmail || "olosundelouis@gmail.com",
+      smtpUser: settings.smtpUser || process.env.GMAIL_USER || process.env.SMTP_USER || "",
+      smtpPass: settings.smtpPass || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "",
+      smtpHost: settings.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com",
+      smtpPort: Number(settings.smtpPort || process.env.SMTP_PORT || 465),
+      resendApiKey: settings.resendApiKey || process.env.RESEND_API_KEY || ""
     };
 
     const submissionDate = new Date().toLocaleDateString("en-US", { year: 'numeric', month: 'long', day: 'numeric' });
@@ -1209,8 +1324,10 @@ app.post("/api/email/trigger", async (req, res) => {
     if (event === "TEST_EMAIL_DISPATCH") {
       const targetEmail = (payload?.email || senderOpts.notificationEmail || "olosundelouis@gmail.com").trim();
       const whatsappUrl = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
-      const subject = " Diagnostic Test – Right-Minds Africa Hub Auto Email API";
-      const textBody = `Dear Administrator,\n\nThis is a live diagnostic test from your Right-Minds Africa Hub Automated Email API.\n\nDiagnostic Details:\n* Target Recipient: ${targetEmail}\n* Outbound Sender Name: ${senderOpts.senderName}\n* Configured SENDER_EMAIL: ${process.env.SENDER_EMAIL || "onboarding@resend.dev"}\n* Resend API Key Configured: ${process.env.RESEND_API_KEY ? "YES (Live Resend Mode)" : "NO (Simulation Mode)"}\n* Internship WhatsApp Link: ${whatsappUrl}\n* Timestamp: ${new Date().toISOString()}\n\nJoin WhatsApp Community: ${whatsappUrl}\n\nYour automated email dispatch pipeline is operational!\n\nWarm regards,\nRight-Minds Africa Hub Systems`;
+      const hasSmtp = Boolean(senderOpts.smtpUser && senderOpts.smtpPass);
+      const hasResend = Boolean(senderOpts.resendApiKey);
+      const subject = "Diagnostic Test – Right-Minds Africa Hub Auto Email API";
+      const textBody = `Dear Administrator,\n\nThis is a live diagnostic test from your Right-Minds Africa Hub Automated Email API.\n\nDiagnostic Details:\n* Target Recipient: ${targetEmail}\n* Outbound Sender Name: ${senderOpts.senderName}\n* Active Transport: ${hasSmtp ? `Direct Gmail/SMTP (${senderOpts.smtpUser}) — Delivers to ALL External Emails` : hasResend ? `Resend API (${senderOpts.senderEmail})` : "Simulation Mode"}\n* Internship WhatsApp Link: ${whatsappUrl}\n* Timestamp: ${new Date().toISOString()}\n\nJoin WhatsApp Community: ${whatsappUrl}\n\nYour automated email dispatch pipeline is operational!\n\nWarm regards,\nRight-Minds Africa Hub Systems`;
 
       const mailRes = await sendEmailViaResend(targetEmail, subject, textBody, senderOpts);
       const logEntry = await logEmailTransaction(db, {
@@ -1220,8 +1337,9 @@ app.post("/api/email/trigger", async (req, res) => {
         registrationId: `TEST-${Date.now().toString().slice(-6)}`,
         programType: "volunteer",
         status: mailRes.success ? "success" : "failed",
+        sandboxRedirectTo: (mailRes as any).sandboxRedirectTo || null,
         deliveryResult: mailRes.success
-          ? `Diagnostic test delivered: ref=${mailRes.messageId}${mailRes.simulated ? " (Simulation Mode - Set RESEND_API_KEY in env for live inbox delivery)" : ""}${(mailRes as any).sandboxRedirectTo ? ` (Relayed via Resend sandbox owner ${(mailRes as any).sandboxRedirectTo})` : ""}`
+          ? `Diagnostic test delivered via ${(mailRes as any).provider || "mailer"}: ref=${mailRes.messageId}${mailRes.simulated ? " (Simulation Mode)" : ""}${(mailRes as any).sandboxRedirectTo ? ` (SANDBOX REDIRECT to ${(mailRes as any).sandboxRedirectTo} — add Gmail App Password in Email Settings to deliver directly to external emails)` : ""}`
           : `Diagnostic test failed: ${mailRes.error}`
       });
 
@@ -1229,8 +1347,10 @@ app.post("/api/email/trigger", async (req, res) => {
         success: mailRes.success,
         status: mailRes.success ? "success" : "failed",
         simulated: !!mailRes.simulated,
-        hasResendKey: !!process.env.RESEND_API_KEY,
-        senderEmail: process.env.SENDER_EMAIL || "onboarding@resend.dev",
+        provider: (mailRes as any).provider || "unknown",
+        hasSmtp,
+        hasResendKey: hasResend,
+        senderEmail: hasSmtp ? senderOpts.smtpUser : senderOpts.senderEmail,
         sandboxRedirectTo: (mailRes as any).sandboxRedirectTo || null,
         messageId: mailRes.messageId || null,
         logId: logEntry.id,
@@ -1241,10 +1361,34 @@ app.post("/api/email/trigger", async (req, res) => {
 
     if (event === "REGISTRATION_CREATED" || event === "VOLUNTEER_APPLICATION_SUBMITTED") {
       const applicantName = payload.fullName || payload.applicantName || "Applicant";
-      const applicantEmail = payload.email;
-      const refNumber = payload.referenceNumber || payload.registrationId || payload.id || "PENDING";
+      const applicantEmail = (payload.email || "").trim();
+      const refNumber = payload.referenceNumber || payload.registrationId || payload.id || `VOL-${Date.now().toString().slice(-6)}`;
       
       if (!applicantEmail) return res.status(400).json({ error: "Applicant has no registered email." });
+
+      // If this came from a Google Form Webhook, also save the registration record in Firestore so Admin sees it!
+      if (rawEvent === "GOOGLE_FORM_WEBHOOK" && db) {
+        try {
+          const webhookRegId = `reg-gf-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          await setDoc(doc(db, "registrations", webhookRegId), {
+            id: webhookRegId,
+            registrationId: refNumber,
+            referenceNumber: refNumber,
+            fullName: applicantName,
+            applicantName,
+            email: applicantEmail,
+            phone: payload.phone || "Submitted via Google Form",
+            location: payload.location || "Nigeria",
+            profileType: "volunteer",
+            programType: "volunteer",
+            programName: payload.programName || "Internship & Volunteer Application (Google Form)",
+            department: payload.primaryRole || payload.department || "Internship & Volunteer Team",
+            registeredAt: new Date().toISOString(),
+            submissionDate: new Date().toISOString(),
+            status: "Received"
+          }, { merge: true });
+        } catch {}
+      }
 
       // Determine dynamic program type mapping
       let progType = "cii";
@@ -1376,9 +1520,14 @@ app.post("/api/email/trigger", async (req, res) => {
           subject: applicantSubject,
           body: applicantBody,
           status: appMail.success ? "success" : "failed",
+          sandboxRedirectTo: appMail.sandboxRedirectTo || null,
           timestamp: new Date().toISOString(),
           sentTime: new Date().toISOString(),
-          deliveryResult: appMail.success ? `Delivered: Reference=${appMail.messageId}` : `Error: ${appMail.error}`
+          deliveryResult: appMail.success
+            ? appMail.sandboxRedirectTo
+              ? `Relayed to Sandbox Owner (${appMail.sandboxRedirectTo}) because onboarding@resend.dev cannot send to external emails yet. Configure Gmail App Password or Verified Domain in Email Settings to deliver directly to ${applicantEmail}. Ref=${appMail.messageId}`
+              : `Delivered directly to ${applicantEmail}: Reference=${appMail.messageId}`
+            : `Error: ${appMail.error}`
         });
       }
 
@@ -1442,6 +1591,7 @@ app.post("/api/email/trigger", async (req, res) => {
       return res.json({
         success: appMail.success,
         simulated: !!appMail.simulated,
+        sandboxRedirectTo: appMail.sandboxRedirectTo || null,
         messageId: appMail.messageId,
         whatsappLink: resolvedWhatsappLink,
         whatsappSupportLink: resolvedWhatsappLink,
@@ -1812,8 +1962,14 @@ app.post("/api/email/retry-log", async (req, res) => {
     const settings = await loadEmailSettings(db);
 
     const senderOpts = {
-      senderName: settings.senderName,
-      replyTo: settings.replyTo
+      senderName: settings.senderName || "Right Minds Africa",
+      replyTo: settings.replyTo || "info@rightmindsafrica.org",
+      senderEmail: settings.senderEmail || "",
+      smtpUser: settings.smtpUser || "",
+      smtpPass: settings.smtpPass || "",
+      smtpHost: settings.smtpHost || "",
+      smtpPort: settings.smtpPort || 465,
+      resendApiKey: settings.resendApiKey || ""
     };
 
     const emailBody = logData.body || logData.deliveryResult || logData.subject;
@@ -1822,11 +1978,21 @@ app.post("/api/email/retry-log", async (req, res) => {
     const nextStatus = dispatch.success ? "success" : "failed";
     await updateDoc(logRef, {
       status: nextStatus,
+      sandboxRedirectTo: dispatch.sandboxRedirectTo || null,
       sentTime: new Date().toISOString(),
-      deliveryResult: dispatch.success ? `Verification recovery succeeded: ref=${dispatch.messageId}` : `Re-dispatch failure: ${dispatch.error}`
+      deliveryResult: dispatch.success
+        ? dispatch.sandboxRedirectTo
+          ? `Relayed to Sandbox Owner (${dispatch.sandboxRedirectTo}). Configure Gmail App Password or Verified Domain in Email Settings to deliver directly to ${logData.recipient}. Ref=${dispatch.messageId}`
+          : `Delivered directly to ${logData.recipient}: ref=${dispatch.messageId}`
+        : `Re-dispatch failure: ${dispatch.error}`
     });
 
-    res.json({ success: dispatch.success, status: nextStatus, error: dispatch.error || null });
+    res.json({
+      success: dispatch.success,
+      status: nextStatus,
+      sandboxRedirectTo: dispatch.sandboxRedirectTo || null,
+      error: dispatch.error || null
+    });
   } catch (err: any) {
     console.error("[Email Engine] Retry failed:", err);
     res.status(500).json({ error: err.message || "Retry pipeline crashed." });

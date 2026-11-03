@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { initializeFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
 
@@ -59,19 +60,59 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "No email log match detected." });
     }
 
+    let remoteSettings = null;
+    try {
+      const settingsSnap = await getDoc(doc(db, "settings", "email_settings"));
+      if (settingsSnap.exists()) remoteSettings = settingsSnap.data();
+    } catch {}
+
     const logData = logSnap.data();
-    const apiKey = process.env.RESEND_API_KEY;
-    const senderEmail = process.env.SENDER_EMAIL || "onboarding@resend.dev";
-    const senderName = "Right Minds Africa";
-    const replyTo = "info@rightmindsafrica.org";
+    const apiKey = (remoteSettings?.resendApiKey || process.env.RESEND_API_KEY || "").trim();
+    const senderEmail = (remoteSettings?.senderEmail || process.env.SENDER_EMAIL || "onboarding@resend.dev").trim();
+    const senderName = remoteSettings?.senderName || "Right Minds Africa";
+    const replyTo = remoteSettings?.replyTo || "info@rightmindsafrica.org";
+    const smtpUser = (remoteSettings?.smtpUser || process.env.SMTP_USER || process.env.GMAIL_USER || "").trim();
+    const smtpPass = (remoteSettings?.smtpPass || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
+    const smtpHost = (remoteSettings?.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com").trim();
+    const smtpPort = Number(remoteSettings?.smtpPort || process.env.SMTP_PORT || 465);
+
+    const emailBody = logData.body || logData.deliveryResult || logData.subject;
 
     let success = true;
     let messageId = `SIM-${Date.now()}`;
     let errorMsg = null;
+    let sandboxRedirectTo = null;
 
-    if (apiKey) {
+    if (smtpUser && smtpPass) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: smtpPort,
+          secure: smtpPort === 465,
+          auth: { user: smtpUser, pass: smtpPass }
+        });
+        const info = await transporter.sendMail({
+          from: `"${senderName}" <${smtpUser}>`,
+          to: logData.recipient,
+          replyTo: replyTo || smtpUser,
+          subject: logData.subject,
+          text: emailBody
+        });
+        messageId = info.messageId || `SMTP-${Date.now()}`;
+      } catch (smtpErr) {
+        if (!apiKey) {
+          success = false;
+          errorMsg = `SMTP Error: ${smtpErr?.message || String(smtpErr)}`;
+        } else {
+          // Fall through to Resend below
+          errorMsg = smtpErr?.message || String(smtpErr);
+        }
+      }
+    }
+
+    if ((!smtpUser || !smtpPass || errorMsg) && apiKey) {
+      errorMsg = null;
       const resend = new Resend(apiKey);
-      const emailBody = logData.body || logData.deliveryResult || logData.subject;
       const primaryFrom = `"${senderName}" <${senderEmail}>`;
       const fallbackFrom = `"${senderName}" <onboarding@resend.dev>`;
 
@@ -90,7 +131,6 @@ export default async function handler(req, res) {
       } catch (primaryErr) {
         let errText = primaryErr?.message || String(primaryErr);
 
-        // Fallback to onboarding@resend.dev if custom domain is not yet verified
         if (senderEmail !== "onboarding@resend.dev" && (errText.toLowerCase().includes("not verified") || errText.toLowerCase().includes("domain"))) {
           try {
             const { data: s2Data, error: s2Err } = await resend.emails.send({
@@ -111,7 +151,6 @@ export default async function handler(req, res) {
           }
         }
 
-        // Sandbox trial fallback if recipient is not verified owner
         if (errText && (errText.includes("You can only send testing emails") || errText.toLowerCase().includes("not verified"))) {
           const ownerMatch = errText.match(/\(([^)]+@[^)]+)\)/);
           const retryTo = ownerMatch && ownerMatch[1] ? ownerMatch[1].trim() : "olosundelouis@gmail.com";
@@ -124,6 +163,7 @@ export default async function handler(req, res) {
           });
           if (!fbErr && fbData?.id) {
             messageId = fbData.id;
+            sandboxRedirectTo = retryTo;
             errText = "";
           } else if (fbErr) {
             errText = fbErr.message || JSON.stringify(fbErr);
@@ -140,13 +180,16 @@ export default async function handler(req, res) {
     const nextStatus = success ? "success" : "failed";
     await updateDoc(logRef, {
       status: nextStatus,
+      sandboxRedirectTo,
       sentTime: new Date().toISOString(),
       deliveryResult: success
-        ? `Verification recovery succeeded: ref=${messageId}`
+        ? sandboxRedirectTo
+          ? `Relayed to Sandbox Owner (${sandboxRedirectTo}). Configure Gmail App Password or Verified Domain in Email Settings to deliver directly to ${logData.recipient}. Ref=${messageId}`
+          : `Delivered directly to ${logData.recipient}: ref=${messageId}`
         : `Re-dispatch failure: ${errorMsg}`
     });
 
-    return res.status(200).json({ success, status: nextStatus, error: errorMsg });
+    return res.status(200).json({ success, status: nextStatus, sandboxRedirectTo, error: errorMsg });
   } catch (err) {
     return res.status(500).json({ error: err?.message || "Retry pipeline crashed." });
   }
