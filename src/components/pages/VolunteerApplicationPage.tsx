@@ -74,7 +74,6 @@ const DEFAULT_GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScq8FZ
 export const DEFAULT_WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2";
 export const INTERNSHIP_WHATSAPP_GROUP_URL = DEFAULT_WHATSAPP_GROUP_URL;
 export const LEGACY_WHATSAPP_FALLBACK_URL = "https://chat.whatsapp.com/FyF1K3OqB4mIDnrefGzMfC";
-export const G3_WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/J4QmEIJbtPiCXLGm5ELHc5";
 const CONNECTED_GOOGLE_EMAIL = "olosundelouis@gmail.com";
 
 export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplicationPageProps) {
@@ -100,12 +99,17 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     return DEFAULT_GOOGLE_FORM_URL;
   });
 
-  // Dedicated Official Internship WhatsApp Community URL (completely separate from G3 Summit)
+  // Dedicated Official Internship & Volunteer WhatsApp Community URL (completely separate from G3 Summit)
   const [whatsappGroupUrl, setWhatsappGroupUrl] = useState<string>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("rma_volunteer_whatsapp_url");
-      // Sanitize: ensure stale G3 Summit links are not accidentally retained for the Internship intake
-      if (saved && saved.startsWith("http") && !saved.includes("HbcAPEL2tVMIZBrzIAsx4o")) {
+      if (
+        saved &&
+        saved.startsWith("http") &&
+        saved !== LEGACY_WHATSAPP_FALLBACK_URL &&
+        !saved.includes("J4QmEIJbtPiCXLGm5ELHc5") &&
+        !saved.includes("Edz8GULjFbXEbT9e1K3Gfk")
+      ) {
         return saved;
       }
       localStorage.setItem("rma_volunteer_whatsapp_url", INTERNSHIP_WHATSAPP_GROUP_URL);
@@ -239,7 +243,13 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
             setCustomUrlInput(savedUrl);
           }
           const savedWhatsapp = localStorage.getItem("rma_volunteer_whatsapp_url");
-          if (savedWhatsapp && savedWhatsapp.startsWith("http") && savedWhatsapp !== LEGACY_WHATSAPP_FALLBACK_URL) {
+          if (
+            savedWhatsapp &&
+            savedWhatsapp.startsWith("http") &&
+            savedWhatsapp !== LEGACY_WHATSAPP_FALLBACK_URL &&
+            !savedWhatsapp.includes("J4QmEIJbtPiCXLGm5ELHc5") &&
+            !savedWhatsapp.includes("Edz8GULjFbXEbT9e1K3Gfk")
+          ) {
             setWhatsappGroupUrl(savedWhatsapp);
           } else {
             setWhatsappGroupUrl(DEFAULT_WHATSAPP_GROUP_URL);
@@ -270,7 +280,9 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           if (
             data.volunteerWhatsappUrl &&
             data.volunteerWhatsappUrl.startsWith("http") &&
-            !data.volunteerWhatsappUrl.includes("HbcAPEL2tVMIZBrzIAsx4o")
+            data.volunteerWhatsappUrl !== LEGACY_WHATSAPP_FALLBACK_URL &&
+            !data.volunteerWhatsappUrl.includes("J4QmEIJbtPiCXLGm5ELHc5") &&
+            !data.volunteerWhatsappUrl.includes("Edz8GULjFbXEbT9e1K3Gfk")
           ) {
             setWhatsappGroupUrl(data.volunteerWhatsappUrl);
             if (typeof window !== "undefined") {

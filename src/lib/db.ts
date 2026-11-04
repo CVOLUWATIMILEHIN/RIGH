@@ -887,7 +887,7 @@ export async function saveRegistration(reg: Omit<Registration, "id" | "registere
         const whatsappUrl =
           (newReg as any).whatsappLink ||
           (programType === "g3"
-            ? "https://chat.whatsapp.com/J4QmEIJbtPiCXLGm5ELHc5"
+            ? "https://chat.whatsapp.com/Edz8GULjFbXEbT9e1K3Gfk?s=cl&p=a&mlu=4&ilr=4&iam=2"
             : programType === "volunteer"
             ? "https://chat.whatsapp.com/HbcAPEL2tVMIZBrzIAsx4o?s=cl&p=a&mlu=4&ilr=4&iam=2"
             : programType === "cii"

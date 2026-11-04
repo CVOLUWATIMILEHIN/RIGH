@@ -1493,7 +1493,7 @@ app.post("/api/email/trigger", async (req, res) => {
       const resolvedWhatsappLink =
         payload.whatsappLink ||
         (progType === "g3"
-          ? "https://chat.whatsapp.com/J4QmEIJbtPiCXLGm5ELHc5"
+          ? "https://chat.whatsapp.com/Edz8GULjFbXEbT9e1K3Gfk?s=cl&p=a&mlu=4&ilr=4&iam=2"
           : progType === "cii"
           ? "https://chat.whatsapp.com/DoI8xpE60FeKMi4sEtE3wI"
           : progType === "volunteer"

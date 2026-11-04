@@ -48,7 +48,7 @@ const G3_GOOGLE_FORM_DIRECT_URL = "https://forms.gle/7h9muLz6rLnB2spV7";
 const G3_GOOGLE_FORM_EMBED_URL =
   "https://docs.google.com/forms/d/e/1FAIpQLSdE1ggFc9mNCRqHb9odQnIdJLaLNs_ZoomB66JOBWFH5yOSSg/viewform?embedded=true";
 const G3_WHATSAPP_GROUP_URL =
-  "https://chat.whatsapp.com/J4QmEIJbtPiCXLGm5ELHc5";
+  "https://chat.whatsapp.com/Edz8GULjFbXEbT9e1K3Gfk?s=cl&p=a&mlu=4&ilr=4&iam=2";
 
 const G3_ROLE_OPTIONS = [
   "Graphic Designer",
