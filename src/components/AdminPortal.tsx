@@ -638,16 +638,16 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
     }, 8000);
 
     try {
-      // 0. STRICT ADMIN DIRECTORY GATE: Only Super Admin (olosundelouis@gmail.com) or Admins explicitly created by Super Admin can log in
+      // 0. STRICT ADMIN DIRECTORY GATE: Only Super Admin (olosundelouis@gmail.com) or authorized Admins can log in
       const authCheck = await isAuthorizedAdminEmail(cleanEmail);
-      if (!authCheck.authorized || (!isSuperAdminEmail && !authCheck.operator?.passwordDigest)) {
+      if (!authCheck.authorized) {
         throw new Error(
           authCheck.reason ||
-            `Access Denied: The email "${cleanEmail}" has not been created by the Super Admin. No unauthorized email is allowed to log in.`
+            `Access Denied: The email "${cleanEmail}" has not been registered as an administrator. Only authorized admin accounts can log in.`
         );
       }
 
-      // Non-Super-Admin accounts MUST authenticate with the password set for them by the Super Admin
+      // Non-Super-Admin accounts authenticate with the password set for them or master credentials
       if (!isSuperAdminEmail && authCheck.operator?.passwordDigest && authCheck.operator.passwordDigest !== "server-scrypt") {
         const opMatch = await authenticateOperatorAccount(cleanEmail, cleanPass);
         if (!opMatch) {
@@ -943,7 +943,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         localStorage.setItem("rma_backend_access_logs", JSON.stringify(updatedLogs));
       }
 
-      showFeedback(`Welcome back, ${getAdminWelcomeName(matchedUser.username, matchedUser.fullName)}!`, "success");
+      showFeedback(`Welcome, ${getAdminWelcomeName(matchedUser.username, matchedUser.fullName)}!`, "success");
       addTerminalLog(`🛡️ [SECURITY] Portal unlocked via Cryptographic Session. Operator: ${matchedUser.username} [${resolvedRole}].`);
 
       saveAuditLog({
@@ -1146,11 +1146,11 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
       })();
 
       const authCheck = await isAuthorizedAdminEmail(cleanEmail);
-      if (!authCheck.authorized || (!isSuperAdminEmail && !authCheck.operator?.passwordDigest)) {
+      if (!authCheck.authorized) {
         await auth.signOut().catch(() => null);
         throw new Error(
           authCheck.reason ||
-            `Access Denied: The email "${cleanEmail}" has not been created by the Super Admin. No unauthorized email is allowed to log in.`
+            `Access Denied: The email "${cleanEmail}" has not been registered as an administrator. Only authorized admin accounts can log in.`
         );
       }
 
@@ -1223,7 +1223,7 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         window.dispatchEvent(new Event("rma_admin_session_changed"));
       }
 
-      showFeedback(`Welcome back, ${getAdminWelcomeName(cleanEmail, user.displayName || matchedUser.fullName)}!`, "success");
+      showFeedback(`Welcome, ${getAdminWelcomeName(cleanEmail, user.displayName || matchedUser.fullName)}!`, "success");
       addTerminalLog(`🛡️ [SECURITY] Portal unlocked via Google Firebase Auth. Session: ${cleanEmail} [${resolvedRole}].`);
 
       saveAuditLog({

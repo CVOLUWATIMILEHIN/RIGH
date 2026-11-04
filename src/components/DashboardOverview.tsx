@@ -142,7 +142,7 @@ export default function DashboardOverview({
             )}
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight font-display text-slate-100">
-            Welcome back, {welcomeName}.
+            Welcome, {welcomeName}
           </h2>
           <p className="text-xs text-slate-400 font-medium leading-relaxed">
             Here is your live operations overview for today. Real-time registries stream synchronization is active, allowing you to manage candidate credentials, review dossiers, inspect check-ins, and authorize permissions.

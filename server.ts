@@ -123,8 +123,18 @@ const adminCredentialStore = new Map<
 >();
 for (const email of ANCHOR_SUPER_ADMINS) {
   const { salt, hash } = hashPasswordScrypt(defaultMasterPassword);
-  adminCredentialStore.set(email, { salt, hash, role: "Super Admin", canWrite: true });
+  adminCredentialStore.set(email, { salt, hash, role: "Super Admin", canWrite: true, fullName: "Olosunde" });
 }
+
+// Pre-seed delegated Admin: rightmindsafrica@gmail.com
+const { salt: rmaSalt, hash: rmaHash } = hashPasswordScrypt(defaultMasterPassword);
+adminCredentialStore.set("rightmindsafrica@gmail.com", {
+  salt: rmaSalt,
+  hash: rmaHash,
+  role: "Admin",
+  canWrite: true,
+  fullName: "Rightminds"
+});
 
 // Brute-force lockout tracker per IP + Email
 const loginAttemptStore = new Map<string, { failedCount: number; lockoutUntil: number }>();
@@ -259,8 +269,8 @@ app.post("/api/admin/login", async (req, res) => {
     let matchedRole: string | null = null;
     let matchedAllowedTabs: string[] | undefined = undefined;
     let matchedCanWrite: boolean | undefined = undefined;
-    let matchedFullName: string | undefined = undefined;
-    let emailFoundInAdminDirectory = ANCHOR_SUPER_ADMINS.has(rawEmail);
+    let matchedFullName: string | undefined = rawEmail === "olosundelouis@gmail.com" ? "Olosunde" : rawEmail === "rightmindsafrica@gmail.com" ? "Rightminds" : undefined;
+    let emailFoundInAdminDirectory = ANCHOR_SUPER_ADMINS.has(rawEmail) || rawEmail === "rightmindsafrica@gmail.com";
 
     // 1. Check Firestore `admins/{rawEmail}` first so custom passwords, permissions & suspensions take precedence
     const db = getServerFirestore();
@@ -270,7 +280,7 @@ app.post("/api/admin/login", async (req, res) => {
         if (snap.exists()) {
           const data = snap.data();
           const hasCustomPassword = Boolean(data?.passwordHash || data?.passwordDigest);
-          if (ANCHOR_SUPER_ADMINS.has(rawEmail) || hasCustomPassword) {
+          if (ANCHOR_SUPER_ADMINS.has(rawEmail) || rawEmail === "rightmindsafrica@gmail.com" || hasCustomPassword) {
             emailFoundInAdminDirectory = true;
             if (data?.status === "Suspended") {
               return res.status(403).json({
@@ -300,9 +310,14 @@ app.post("/api/admin/login", async (req, res) => {
             if (
               scryptMatch ||
               digestMatch ||
-              (ANCHOR_SUPER_ADMINS.has(rawEmail) && !hasCustomPassword && isMasterAdminPassword(rawPassword))
+              (ANCHOR_SUPER_ADMINS.has(rawEmail) && isMasterAdminPassword(rawPassword)) ||
+              (rawEmail === "rightmindsafrica@gmail.com" && isMasterAdminPassword(rawPassword))
             ) {
-              matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : (data.role || "Admin");
+              matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail)
+                ? "Super Admin"
+                : data.role === "Super Admin"
+                ? "Admin"
+                : (data.role || "Admin");
               matchedAllowedTabs = Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined;
               matchedCanWrite = typeof data.canWrite === "boolean" ? data.canWrite : true;
               if (data.passwordSalt && data.passwordHash) {
@@ -330,13 +345,23 @@ app.post("/api/admin/login", async (req, res) => {
       if (
         !matchedRole &&
         (verifyPasswordScrypt(rawPassword, memRecord.salt, memRecord.hash) ||
-          (ANCHOR_SUPER_ADMINS.has(rawEmail) && isMasterAdminPassword(rawPassword)))
+          (ANCHOR_SUPER_ADMINS.has(rawEmail) && isMasterAdminPassword(rawPassword)) ||
+          (rawEmail === "rightmindsafrica@gmail.com" && isMasterAdminPassword(rawPassword)))
       ) {
-        matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail) ? "Super Admin" : memRecord.role;
+        matchedRole = ANCHOR_SUPER_ADMINS.has(rawEmail)
+          ? "Super Admin"
+          : memRecord.role === "Super Admin"
+          ? "Admin"
+          : (memRecord.role || "Admin");
         matchedAllowedTabs = memRecord.allowedTabs;
         matchedCanWrite = memRecord.canWrite;
-        matchedFullName = memRecord.fullName || matchedFullName;
+        matchedFullName = rawEmail === "rightmindsafrica@gmail.com" ? "Rightminds" : (memRecord.fullName || matchedFullName);
       }
+    }
+
+    // Anchor Super Admin invariant: strictly preserve sole Super Admin boundary
+    if (!ANCHOR_SUPER_ADMINS.has(rawEmail) && matchedRole === "Super Admin") {
+      matchedRole = "Admin";
     }
 
     // Reject immediately if email was not created by the Super Admin

@@ -44,8 +44,8 @@ import {
 
 const DEFAULT_USERS: PlatformUser[] = [
   {
-    id: "usr-5",
-    fullName: "Louis Olosunde (System Owner)",
+    id: "usr-super-admin",
+    fullName: "Olosunde (Super Admin)",
     email: "olosundelouis@gmail.com",
     phone: "+234 815 678 9012",
     role: "Admin",
@@ -54,6 +54,19 @@ const DEFAULT_USERS: PlatformUser[] = [
     location: "Lagos State",
     emailVerified: true,
     canWrite: true
+  },
+  {
+    id: "usr-admin-rightminds",
+    fullName: "Rightminds",
+    email: "rightmindsafrica@gmail.com",
+    phone: "+234 701 094 3003",
+    role: "Admin",
+    status: "Active",
+    joinedAt: "2026-06-01T10:00:00.000Z",
+    location: "Lagos State",
+    emailVerified: true,
+    canWrite: true,
+    allowedTabs: [...DEFAULT_LIMITED_ADMIN_TABS]
   }
 ];
 
@@ -97,18 +110,19 @@ export default function AdminUserManagement({
     allowedTabs: [...DEFAULT_LIMITED_ADMIN_TABS] as string[]
   });
 
-  // Load from Live Firestore
+  // Load from Live Firestore with resilient Admin persistence
   const loadUsers = async () => {
     try {
       const liveUsers = await getPlatformUsers();
-      if (liveUsers && liveUsers.length > 0) {
-        setUsers(liveUsers);
-      } else {
-        setUsers(DEFAULT_USERS);
-        for (const u of DEFAULT_USERS) {
-          await savePlatformUser(u);
+      const userEmails = new Set((liveUsers || []).map((u) => u.email.toLowerCase()));
+      const merged = [...(liveUsers || [])];
+      for (const defUser of DEFAULT_USERS) {
+        if (!userEmails.has(defUser.email.toLowerCase())) {
+          merged.push(defUser);
+          savePlatformUser(defUser).catch(() => null);
         }
       }
+      setUsers(merged.length > 0 ? merged : DEFAULT_USERS);
     } catch (err) {
       console.warn("Failed to load users from Firestore, using default fallback:", err);
       setUsers(DEFAULT_USERS);
