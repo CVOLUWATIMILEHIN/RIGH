@@ -36,6 +36,9 @@ import {
   ZoomIn,
   Phone,
   Globe,
+  Facebook,
+  Linkedin,
+  Instagram,
   X
 } from "lucide-react";
 import { saveRegistration } from "../lib/db";
@@ -461,12 +464,22 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
                 {/* Key Info Pill from Flyer */}
                 <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl space-y-2">
                   <div className="flex flex-wrap items-center justify-between text-xs font-bold text-slate-800 gap-2">
-                    <span className="flex items-center gap-1.5 text-brand-blue">
+                    <a
+                      href="tel:+2347010943003"
+                      className="flex items-center gap-1.5 text-brand-blue hover:text-brand-orange transition-colors"
+                    >
                       <Phone size={13} className="text-brand-orange" /> +234 701 094 3003
-                    </span>
-                    <span className="text-slate-500 font-mono text-[11px]">
-                      @Rightminds Africa Hub
-                    </span>
+                    </a>
+                    <a
+                      href="https://www.facebook.com/RightMAHub"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-600 hover:text-[#1877F2] font-mono text-[11px] inline-flex items-center gap-1 transition-colors"
+                      title="Follow RightMinds Africa Hub on Facebook (@RightMAHub)"
+                    >
+                      <Facebook size={12} className="text-[#1877F2] fill-[#1877F2]" />
+                      <span>@RightMAHub</span>
+                    </a>
                   </div>
                   <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/60 text-[11px]">
                     <span className="text-slate-500">For information, partnerships or slots:</span>
@@ -1260,11 +1273,23 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
               {/* Footer Meta & Action Bar */}
               <div className="flex flex-col sm:flex-row items-center justify-between p-4 sm:p-5 border-t border-white/10 bg-slate-950/80 gap-3 text-xs text-slate-300">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="flex items-center gap-1.5 text-brand-orange font-bold font-mono">
+                  <a
+                    href="tel:+2347010943003"
+                    className="flex items-center gap-1.5 text-brand-orange hover:text-amber-400 font-bold font-mono transition-colors"
+                  >
                     <Phone size={13} /> +234 701 094 3003
-                  </span>
+                  </a>
                   <span className="text-slate-500">•</span>
-                  <span className="font-mono text-slate-300">@Rightminds Africa Hub</span>
+                  <a
+                    href="https://www.facebook.com/RightMAHub"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-slate-300 hover:text-brand-orange inline-flex items-center gap-1.5 transition-colors"
+                    title="Follow RightMinds Africa Hub on Facebook (@RightMAHub)"
+                  >
+                    <Facebook size={13} className="text-[#1877F2] fill-[#1877F2]" />
+                    <span>@RightMAHub</span>
+                  </a>
                   <span className="text-slate-500">•</span>
                   <span className="font-mono text-slate-300">rightmindsafricahub.ai.studio</span>
                 </div>

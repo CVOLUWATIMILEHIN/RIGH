@@ -78,7 +78,7 @@ const DEFAULT_RESOURCES: ResourceModel[] = [
     category: "Videos",
     author: "Gracious-Esther",
     sizeOrDuration: "Video Session (54 mins)",
-    link: "https://www.facebook.com/rightmindsafrica",
+    link: "https://www.facebook.com/RightMAHub",
     downloadsCount: 318,
     featured: false,
     status: "Active",

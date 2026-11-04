@@ -50,7 +50,7 @@ export const DEFAULT_BRAND_CONFIG: BrandConfig = {
     linkedin: "https://linkedin.com/company/right-minds-africa",
     instagram: "https://instagram.com/rightmindsafrica",
     youtube: "https://youtube.com/@rightmindsafrica",
-    facebook: "https://facebook.com/rightmindsafrica",
+    facebook: "https://www.facebook.com/RightMAHub",
     whatsapp: "https://wa.me/2348123456789"
   },
   metaTitle: "Right Minds Africa Hub | Youth Leadership & Operations Portal",

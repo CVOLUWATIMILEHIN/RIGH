@@ -228,7 +228,7 @@ export default function AdminSocialHub({ hasWriteAccess, onLogAction }: AdminSoc
               mediaType: item.mediaType,
               mediaUrls: item.mediaUrls,
               postUrl: item.platform === "facebook" 
-                ? "https://facebook.com/rightmindsafrica" 
+                ? "https://www.facebook.com/RightMAHub" 
                 : "https://instagram.com/rightmindsafrica",
               hashtags: ["leadership", "growth", "africa", "corperimpact"],
               publishedAt: item.publishedAt,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Mail, Phone, MapPin, Award, Lock, Send, CheckCircle, AlertCircle } from "lucide-react";
+import { Mail, Phone, MapPin, Award, Lock, Send, CheckCircle, AlertCircle, Facebook, Linkedin, Instagram } from "lucide-react";
 import { saveNewsletterSubscription } from "../lib/db";
 import brandLogo from "../assets/images/brand_logo_official_new_1780385523572.png";
 import { PageContainer } from "./PageContainer";
@@ -91,9 +91,9 @@ export default function Footer({ onOpenJoin, onViewAdmin, onViewTeam, onViewAbou
   };
 
   const socialChannels = [
-    { name: "Facebook", url: "https://www.facebook.com/RightMAHub/", handle: "@RightMAHub" },
-    { name: "LinkedIn", url: "https://www.linkedin.com/company/rightmindafricahub", handle: "@rightmindafricahub" },
-    { name: "Instagram", url: "https://www.instagram.com/rightmindsafrica", handle: "@rightmindsafrica" }
+    { name: "Facebook", url: "https://www.facebook.com/RightMAHub", handle: "@RightMAHub", Icon: Facebook },
+    { name: "LinkedIn", url: "https://www.linkedin.com/company/rightmindafricahub", handle: "@rightmindafricahub", Icon: Linkedin },
+    { name: "Instagram", url: "https://www.instagram.com/rightmindsafrica", handle: "@rightmindsafrica", Icon: Instagram }
   ];
 
   return (
@@ -129,6 +129,36 @@ export default function Footer({ onOpenJoin, onViewAdmin, onViewTeam, onViewAbou
             <p className="text-xs text-slate-600 leading-relaxed font-normal">
               {brand.tagline}
             </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <a
+                href="https://www.facebook.com/RightMAHub"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1877F2]/10 hover:bg-[#1877F2] text-[#1877F2] hover:text-white rounded-xl text-xs font-semibold transition-all border border-[#1877F2]/25"
+                title="Follow RightMinds Africa Hub on Facebook"
+              >
+                <Facebook size={13} className="fill-current" />
+                <span className="font-mono text-[10px]">@RightMAHub</span>
+              </a>
+              <a
+                href="https://www.instagram.com/rightmindsafrica"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-[#E4405F] text-slate-700 hover:text-white rounded-xl text-xs font-semibold transition-all border border-slate-200"
+                title="Follow on Instagram"
+              >
+                <Instagram size={13} />
+              </a>
+              <a
+                href="https://www.linkedin.com/company/rightmindafricahub"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-[#0A66C2] text-slate-700 hover:text-white rounded-xl text-xs font-semibold transition-all border border-slate-200"
+                title="Follow on LinkedIn"
+              >
+                <Linkedin size={13} />
+              </a>
+            </div>
           </div>
 
           {/* Quick Links (2 cols) */}
@@ -261,17 +291,21 @@ export default function Footer({ onOpenJoin, onViewAdmin, onViewTeam, onViewAbou
         {/* Bottom copyright details */}
         <div className="pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div className="flex flex-wrap items-center justify-center gap-3">
-            {socialChannels.map((channel, idx) => (
-              <a
-                key={idx}
-                href={channel.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-slate-600 hover:text-brand-blue transition-colors bg-white px-2.5 py-1 rounded-xl border border-slate-200 hover:border-brand-orange/40 text-[9px] font-mono uppercase font-semibold"
-              >
-                {channel.name}
-              </a>
-            ))}
+            {socialChannels.map((channel, idx) => {
+              const IconComp = channel.Icon;
+              return (
+                <a
+                  key={idx}
+                  href={channel.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-600 hover:text-brand-blue transition-colors bg-white px-2.5 py-1 rounded-xl border border-slate-200 hover:border-brand-orange/40 text-[9px] font-mono uppercase font-semibold inline-flex items-center gap-1.5"
+                >
+                  <IconComp size={11} className={channel.name === "Facebook" ? "text-[#1877F2]" : channel.name === "Instagram" ? "text-[#E4405F]" : "text-[#0A66C2]"} />
+                  <span>{channel.name}</span>
+                </a>
+              );
+            })}
             {onViewAdmin && isAdminLoggedIn && (
               <button
                 onClick={onViewAdmin}
