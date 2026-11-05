@@ -271,7 +271,7 @@ export default function FAQs() {
           <div className="flex justify-center gap-4 text-brand-blue font-bold font-mono uppercase mt-2 select-all">
             <a href="mailto:rightmindsafrica@gmail.com" className="hover:text-brand-orange">rightmindsafrica@gmail.com</a>
             <span>&bull;</span>
-            <a href="tel:+2348123456789" className="hover:text-brand-orange">+234 (0) 81 2345 6789</a>
+            <a href="tel:+2348039809016" className="hover:text-brand-orange">+234 803 980 9016</a>
           </div>
         </div>
 

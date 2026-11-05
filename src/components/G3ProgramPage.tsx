@@ -464,12 +464,21 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
                 {/* Key Info Pill from Flyer */}
                 <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl space-y-2">
                   <div className="flex flex-wrap items-center justify-between text-xs font-bold text-slate-800 gap-2">
-                    <a
-                      href="tel:+2347010943003"
-                      className="flex items-center gap-1.5 text-brand-blue hover:text-brand-orange transition-colors"
-                    >
-                      <Phone size={13} className="text-brand-orange" /> +234 701 094 3003
-                    </a>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <a
+                        href="tel:+2348039809016"
+                        className="flex items-center gap-1 text-brand-blue hover:text-brand-orange transition-colors"
+                      >
+                        <Phone size={13} className="text-brand-orange" /> +234 803 980 9016
+                      </a>
+                      <span className="text-slate-300">|</span>
+                      <a
+                        href="tel:+2347010943003"
+                        className="flex items-center gap-1 text-brand-blue hover:text-brand-orange transition-colors"
+                      >
+                        +234 701 094 3003
+                      </a>
+                    </div>
                     <a
                       href="https://www.facebook.com/RightMAHub"
                       target="_blank"
@@ -1274,10 +1283,17 @@ export default function G3ProgramPage({ onBack, onOpenJoin }: G3ProgramPageProps
               <div className="flex flex-col sm:flex-row items-center justify-between p-4 sm:p-5 border-t border-white/10 bg-slate-950/80 gap-3 text-xs text-slate-300">
                 <div className="flex flex-wrap items-center gap-3">
                   <a
+                    href="tel:+2348039809016"
+                    className="flex items-center gap-1.5 text-brand-orange hover:text-amber-400 font-bold font-mono transition-colors"
+                  >
+                    <Phone size={13} /> +234 803 980 9016
+                  </a>
+                  <span className="text-slate-500">•</span>
+                  <a
                     href="tel:+2347010943003"
                     className="flex items-center gap-1.5 text-brand-orange hover:text-amber-400 font-bold font-mono transition-colors"
                   >
-                    <Phone size={13} /> +234 701 094 3003
+                    +234 701 094 3003
                   </a>
                   <span className="text-slate-500">•</span>
                   <a

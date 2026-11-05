@@ -871,10 +871,10 @@ export default function Navbar({
               
               {/* Phone icon button (Call direct) */}
               <a
-                href={`tel:${(cms.contactPhone || "+234 701 667 0172").replace(/[^0-9+]/g, "")}`}
+                href={`tel:${(cms.contactPhone || "+234 803 980 9016").replace(/[^0-9+]/g, "")}`}
                 className="hidden xl:flex p-2 rounded-xl border transition-all cursor-pointer items-center justify-center bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
                 id="phone-cta-button"
-                title={`Call Us: ${cms.contactPhone || "+234 701 667 0172"}`}
+                title={`Call Us: ${cms.contactPhone || "+234 803 980 9016"}`}
               >
                 <Phone size={13} className="shrink-0" />
               </a>
@@ -1225,11 +1225,11 @@ export default function Navbar({
                   </button>
 
                   <a
-                    href={`tel:${(cms.contactPhone || "+234 701 667 0172").replace(/[^0-9+]/g, "")}`}
+                    href={`tel:${(cms.contactPhone || "+234 803 980 9016").replace(/[^0-9+]/g, "")}`}
                     className="flex-1 py-2 px-3 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300 cursor-pointer text-center"
                   >
                     <Phone size={13} />
-                    <span>Call Desk</span>
+                    <span>+234 803 980 9016</span>
                   </a>
 
                   {(isAdminLoggedIn || currentView === "admin") && (

@@ -91,6 +91,9 @@ export default function CiiFooter({ onBack, onNavigateSection, onSelectTrack }: 
               <p>
                 📧 <a href="mailto:corpersimpactinitiative@gmail.com" className="hover:text-amber-400 underline">corpersimpactinitiative@gmail.com</a>
               </p>
+              <p>
+                📞 <a href="tel:+2348039809016" className="hover:text-amber-400 underline">+234 803 980 9016</a>
+              </p>
               <p className="text-slate-400">
                 📍 Lagos City Hub, Right Minds Africa Hub Secretariat
               </p>

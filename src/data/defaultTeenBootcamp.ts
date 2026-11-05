@@ -513,7 +513,7 @@ export const DEFAULT_TEEN_BOOTCAMP_CONFIG: TeenBootcampConfig = {
     fee: "₦50,000 per participant (Early Bird ₦45,000)",
     accommodation: "Day Attendance (Supervised Lodging available on request)",
     closingDate: "August 10th, 2026",
-    contactPhone: "+234 814 239 8841",
+    contactPhone: "+234 803 980 9016",
     contactEmail: "bootcamp@rightmindsafrica.org"
   },
 

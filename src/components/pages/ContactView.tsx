@@ -104,7 +104,12 @@ export default function ContactView({ onNavigate }: ContactViewProps) {
                   </div>
                   <div>
                     <h4 className="text-[10px] uppercase font-bold text-slate-400 font-mono">Phone Helpline</h4>
-                    <p className="text-xs sm:text-sm font-bold text-slate-900 select-all">{cms.contactPhone || "+234 (0) 803 980 9016"}</p>
+                    <a
+                      href={`tel:${(cms.contactPhone || "+234 803 980 9016").replace(/[^0-9+]/g, "")}`}
+                      className="text-xs sm:text-sm font-bold text-slate-900 hover:text-amber-600 transition-colors select-all block font-mono"
+                    >
+                      {cms.contactPhone || "+234 803 980 9016"}
+                    </a>
                     <p className="text-[10px] text-slate-400 mt-1">Active 9:00 AM - 5:00 PM (GMT+1)</p>
                   </div>
                 </div>

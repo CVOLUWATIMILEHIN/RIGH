@@ -42,7 +42,7 @@ export const DEFAULT_BRAND_CONFIG: BrandConfig = {
   accentColor: "#F59E0B",
   secondaryColor: "#2ECC71",
   supportEmail: "rightmindsafrica@gmail.com",
-  supportPhone: "+234 812 345 6789",
+  supportPhone: "+234 803 980 9016",
   officeAddress: "Lagos, Ibadan & Osogbo Hubs, Nigeria",
   websiteUrl: "https://rightmindsafrica.org",
   socialLinks: {
@@ -51,7 +51,7 @@ export const DEFAULT_BRAND_CONFIG: BrandConfig = {
     instagram: "https://instagram.com/rightmindsafrica",
     youtube: "https://youtube.com/@rightmindsafrica",
     facebook: "https://www.facebook.com/RightMAHub",
-    whatsapp: "https://wa.me/2348123456789"
+    whatsapp: "https://wa.me/2348039809016"
   },
   metaTitle: "Right Minds Africa Hub | Youth Leadership & Operations Portal",
   metaDescription: "Right Minds Africa Hub is a premier growth-mindset, leadership, and productivity training hub for young professionals, undergraduates, and corps members.",
@@ -85,7 +85,7 @@ export const BRAND_PRESETS: BrandPreset[] = [
       accentColor: "#F59E0B",
       secondaryColor: "#2ECC71",
       supportEmail: "rightmindsafrica@gmail.com",
-      supportPhone: "+234 812 345 6789",
+      supportPhone: "+234 803 980 9016",
       officeAddress: "Lagos, Ibadan & Osogbo Hubs, Nigeria",
       metaTitle: "Right Minds Africa Hub | Youth Leadership & Operations Portal"
     }

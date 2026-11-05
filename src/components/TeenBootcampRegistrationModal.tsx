@@ -182,7 +182,7 @@ export default function TeenBootcampRegistrationModal({ isOpen, onClose, config 
                   <AlertCircle className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" size={20} />
                   <div className="text-xs text-amber-950 dark:text-amber-200 leading-relaxed">
                     <strong className="block font-bold text-amber-900 dark:text-amber-300 mb-0.5">Registration Form Under Maintenance</strong>
-                    Online seat reservation is temporarily deactivated while our registration system is being upgraded. To reserve a seat directly in the interim, please contact our administrative desk at <a href="tel:+2347016670172" className="underline font-bold">+234 701 667 0172</a> or reach out via WhatsApp.
+                    Online seat reservation is temporarily deactivated while our registration system is being upgraded. To reserve a seat directly in the interim, please contact our administrative desk at <a href="tel:+2348039809016" className="underline font-bold">+234 803 980 9016</a> or reach out via WhatsApp.
                   </div>
                 </div>
 

@@ -219,7 +219,9 @@ export default function Footer({ onOpenJoin, onViewAdmin, onViewTeam, onViewAbou
                 <Phone className="text-brand-orange shrink-0 mt-0.5" size={14} />
                 <div>
                   <p className="font-bold text-[9px] uppercase text-brand-blue tracking-widest font-mono">Helplines</p>
-                  <p className="select-all block mt-0.5 font-medium">+234 (0) 803 980 9016</p>
+                  <a href="tel:+2348039809016" className="hover:text-brand-orange select-all block mt-0.5 font-medium transition-colors">
+                    +234 803 980 9016
+                  </a>
                 </div>
               </div>
 
