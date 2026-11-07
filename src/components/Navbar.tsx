@@ -176,6 +176,12 @@ const SEARCH_DATABASE: SearchResult[] = [
     view: "impact-stories"
   },
   {
+    title: "Meet Our Volunteers",
+    category: "resource",
+    description: "Meet the passionate volunteers contributing their time, skills, and dedication to Right-Minds Africa.",
+    view: "volunteers"
+  },
+  {
     title: "Internship & Partner",
     category: "resource",
     description: "Apply as an intern, mentor, facilitator, or corporate partner with Right Minds Africa.",
@@ -332,6 +338,7 @@ export default function Navbar({
     currentView.startsWith("about-") || 
     currentView.startsWith("impact-") || 
     currentView.startsWith("get-involved-");
+  const isVolunteersActive = currentView === "volunteers";
   const isProgramsActive = 
     currentView.startsWith("programs-") || 
     currentView === "initiatives-yap" || 
@@ -357,7 +364,8 @@ export default function Navbar({
             { label: "Overview", view: "about-overview", description: "Our story, mission, and foundational principles" },
             { label: "Vision & Mission", view: "about-vision-mission", description: "Strategic mandates for continental youth impact" },
             { label: "Philosophy", view: "about-philosophy", description: "The Think • Live • Lead cognitive model" },
-            { label: "Core Team", view: "about-team", description: "Executive directors, coaches, and advisory council" }
+            { label: "Core Team", view: "about-team", description: "Executive directors, coaches, and advisory council" },
+            { label: "Volunteers", view: "volunteers", description: "Meet the dedicated volunteers powering our vision" }
           ]
         },
         {
@@ -850,6 +858,21 @@ export default function Navbar({
                 </AnimatePresence>
               </div>
 
+              {/* Volunteers */}
+              <button
+                onClick={() => handleItemClick("volunteers")}
+                className={`relative px-3 py-2 text-xs xl:text-[13px] tracking-wide cursor-pointer transition-colors duration-150 whitespace-nowrap ${
+                  isVolunteersActive
+                    ? "font-bold text-brand-blue dark:text-amber-400"
+                    : "font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white"
+                }`}
+              >
+                <span>Volunteers</span>
+                {isVolunteersActive && (
+                  <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-brand-blue dark:bg-amber-400 rounded-full" />
+                )}
+              </button>
+
               {/* 7. Contact */}
               <button
                 onClick={() => handleItemClick("contact")}
@@ -1187,6 +1210,18 @@ export default function Navbar({
                     )}
                   </AnimatePresence>
                 </div>
+
+                {/* Volunteers */}
+                <button
+                  onClick={() => handleItemClick("volunteers")}
+                  className={`w-full text-left px-3.5 py-3 rounded-xl text-xs font-bold tracking-wide transition-colors ${
+                    isVolunteersActive
+                      ? "text-brand-blue dark:text-amber-400 bg-slate-100 dark:bg-slate-800"
+                      : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  }`}
+                >
+                  Volunteers
+                </button>
 
                 {/* 7. Contact */}
                 <button

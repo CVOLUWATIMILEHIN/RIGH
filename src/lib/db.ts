@@ -4766,6 +4766,23 @@ export async function subscribeToRealtimeUpdates(): Promise<void> {
       window.dispatchEvent(new Event("rma_popups_updated"));
     }, (err) => handleSnapshotErr(err, "Website Popups"));
 
+    // 7b. Volunteers Directory
+    onSnapshot(collection(db, "volunteers"), (querySnap) => {
+      const fbVolunteers: any[] = [];
+      querySnap.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data && !data._deleted) {
+          fbVolunteers.push({ id: docSnap.id, ...data });
+        }
+      });
+      if (fbVolunteers.length > 0) {
+        try {
+          localStorage.setItem("rma_volunteers_directory_v1", JSON.stringify(fbVolunteers));
+        } catch {}
+      }
+      window.dispatchEvent(new Event("rma_volunteers_updated"));
+    }, (err) => handleSnapshotErr(err, "Volunteers"));
+
     // 8. Courses (merge remote snapshot with local custom courses & deletedIds so newly added courses are never overwritten)
     onSnapshot(collection(db, "courses"), (querySnap) => {
       const deletedIds = new Set(getDeletedCourseIdsLocal());
@@ -6024,5 +6041,346 @@ export async function updateTeenBootcampRegistrationStatus(
     console.error("Failed to update registration status in Firestore:", err);
   }
 }
+
+/* ==========================================================================
+   VOLUNTEER MANAGEMENT SYSTEM (SUPABASE + FIRESTORE DUAL PERSISTENCE)
+   ========================================================================== */
+
+export type VolunteerStatus = "Draft" | "Published" | "Archived";
+
+export interface VolunteerProfile {
+  id: string;
+  full_name: string;
+  slug: string;
+  role: string; // Specific Position / Specialisation
+  position?: string; // Explicit alias for Specific Position
+  department: string; // Main Department (one of the 6 Main RMA Departments)
+  departments?: string[];
+  biography: string;
+  expertise: string[];
+  photo_url: string;
+  photo_path?: string;
+  linkedin_url?: string;
+  email?: string; // Private administrator field — stripped on public queries
+  date_onboarded: string;
+  status: VolunteerStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+const VOLUNTEERS_CACHE_KEY = "rma_volunteers_directory_v1";
+
+function sanitizePublicVolunteer(v: VolunteerProfile): VolunteerProfile {
+  const { email, ...publicFields } = v;
+  return publicFields;
+}
+
+/**
+ * Retrieve all volunteer records for CMS Administrators (includes Draft, Published, Archived, and private email).
+ * Syncs across Supabase (`volunteers` table) and Firestore (`volunteers` collection) so records persist across refreshes.
+ */
+export async function getVolunteers(): Promise<VolunteerProfile[]> {
+  let list: VolunteerProfile[] = [];
+  const {
+    parseVolunteerDepartments,
+    formatVolunteerDepartmentsString,
+    normalizeVolunteerPositionName,
+    RMA_VOLUNTEER_DEPARTMENTS
+  } = await import("./supabaseCms");
+
+  if (typeof window !== "undefined") {
+    try {
+      const cached = localStorage.getItem(VOLUNTEERS_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          list = parsed.map((item: any) => {
+            const depts = parseVolunteerDepartments(item.department, item.departments);
+            const deptStr =
+              depts.length > 0
+                ? formatVolunteerDepartmentsString(depts)
+                : RMA_VOLUNTEER_DEPARTMENTS[0];
+            const pos = normalizeVolunteerPositionName(
+              item.position || item.role,
+              item.department
+            );
+            return {
+              ...item,
+              role: pos,
+              position: pos,
+              department: deptStr,
+              departments: depts.length > 0 ? depts : [deptStr]
+            };
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 1. Try Supabase primary table if configured
+  try {
+    const { fetchVolunteersFromSupabase } = await import("./supabaseCms");
+    const supaRes = await fetchVolunteersFromSupabase({ publicOnly: false });
+    if (supaRes.data && supaRes.data.length > 0) {
+      const mergedMap = new Map<string, VolunteerProfile>();
+      for (const item of list) mergedMap.set(item.id, item);
+      for (const item of supaRes.data) mergedMap.set(item.id, item);
+      list = Array.from(mergedMap.values());
+    }
+  } catch (e) {
+    console.warn("Supabase volunteers fetch skipped or pending:", e);
+  }
+
+  // 2. Sync with Firestore `volunteers` collection
+  try {
+    const { collection, getDocs } = await import("firebase/firestore");
+    const db = await getFirestoreDb();
+    const querySnapshot = await getDocs(collection(db, "volunteers"));
+    const fbList: VolunteerProfile[] = [];
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data() as any;
+      if (data && !data._deleted) {
+        const depts = parseVolunteerDepartments(data.department, data.departments);
+        const deptStr =
+          depts.length > 0
+            ? formatVolunteerDepartmentsString(depts)
+            : RMA_VOLUNTEER_DEPARTMENTS[0];
+        const pos = normalizeVolunteerPositionName(
+          data.position || data.role,
+          data.department
+        );
+
+        fbList.push({
+          id: docSnap.id,
+          full_name: data.full_name || "",
+          slug: data.slug || docSnap.id,
+          role: pos,
+          position: pos,
+          department: deptStr,
+          departments: depts.length > 0 ? depts : [deptStr],
+          biography: data.biography || "",
+          expertise: Array.isArray(data.expertise)
+            ? data.expertise
+            : typeof data.expertise === "string" && data.expertise.trim()
+            ? data.expertise.split(",").map((s: string) => s.trim()).filter(Boolean)
+            : [],
+          photo_url: data.photo_url || "",
+          photo_path: data.photo_path || "",
+          linkedin_url: data.linkedin_url || "",
+          email: data.email || "",
+          date_onboarded: data.date_onboarded || new Date().toISOString().slice(0, 10),
+          status: (data.status as VolunteerStatus) || "Draft",
+          created_at: data.created_at || new Date().toISOString(),
+          updated_at: data.updated_at || new Date().toISOString()
+        });
+      }
+    });
+
+    if (fbList.length > 0 || list.length === 0) {
+      const mergedMap = new Map<string, VolunteerProfile>();
+      for (const item of list) mergedMap.set(item.id, item);
+      for (const item of fbList) {
+        const existing = mergedMap.get(item.id);
+        if (!existing || new Date(item.updated_at).getTime() >= new Date(existing.updated_at || 0).getTime()) {
+          mergedMap.set(item.id, item);
+        }
+      }
+      list = Array.from(mergedMap.values());
+    }
+  } catch (err) {
+    console.warn("Firestore volunteers fetch fallback:", err);
+  }
+
+  // Sort newest onboarded / updated first
+  list.sort((a, b) => {
+    const dateA = new Date(a.date_onboarded || a.created_at || 0).getTime();
+    const dateB = new Date(b.date_onboarded || b.created_at || 0).getTime();
+    return dateB - dateA;
+  });
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(VOLUNTEERS_CACHE_KEY, JSON.stringify(list));
+    } catch (e) {}
+  }
+
+  return list;
+}
+
+/**
+ * Retrieve ONLY Published volunteers for the public `/volunteers` website page.
+ * Explicitly strips private `email` addresses and excludes `Draft` and `Archived` profiles.
+ */
+export async function getPublishedVolunteers(): Promise<VolunteerProfile[]> {
+  try {
+    const { fetchVolunteersFromSupabase } = await import("./supabaseCms");
+    const supaPublic = await fetchVolunteersFromSupabase({ publicOnly: true });
+    if (supaPublic.data && supaPublic.data.length > 0) {
+      const all = await getVolunteers();
+      const publishedAll = all
+        .filter((v) => v.status === "Published")
+        .map(sanitizePublicVolunteer);
+      if (publishedAll.length >= supaPublic.data.length) {
+        return publishedAll;
+      }
+      return supaPublic.data.map(sanitizePublicVolunteer);
+    }
+  } catch (e) {}
+
+  const all = await getVolunteers();
+  return all
+    .filter((v) => v.status === "Published")
+    .map(sanitizePublicVolunteer);
+}
+
+/**
+ * Create or update a volunteer record in Supabase and Firestore.
+ */
+export async function saveVolunteer(
+  volunteer: VolunteerProfile
+): Promise<{ success: boolean; supabaseSynced: boolean; error: string | null }> {
+  const {
+    parseVolunteerDepartments,
+    formatVolunteerDepartmentsString,
+    normalizeVolunteerPositionName,
+    RMA_VOLUNTEER_DEPARTMENTS
+  } = await import("./supabaseCms");
+
+  const nowIso = new Date().toISOString();
+  const parsedDepts = parseVolunteerDepartments(volunteer.department, volunteer.departments);
+  const formattedDepartment =
+    parsedDepts.length > 0
+      ? formatVolunteerDepartmentsString(parsedDepts)
+      : RMA_VOLUNTEER_DEPARTMENTS[0];
+  const resolvedPosition = normalizeVolunteerPositionName(
+    volunteer.position || volunteer.role,
+    volunteer.department
+  );
+
+  const normalized: VolunteerProfile = {
+    ...volunteer,
+    full_name: volunteer.full_name.trim(),
+    slug:
+      volunteer.slug?.trim() ||
+      `${volunteer.full_name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")}-${volunteer.id.slice(-4)}`,
+    role: resolvedPosition,
+    position: resolvedPosition,
+    department: formattedDepartment,
+    departments: parsedDepts.length > 0 ? parsedDepts : [formattedDepartment],
+    biography: volunteer.biography.trim(),
+    expertise: Array.isArray(volunteer.expertise)
+      ? volunteer.expertise.map((s) => s.trim()).filter(Boolean)
+      : [],
+    photo_url: volunteer.photo_url,
+    photo_path: volunteer.photo_path || "",
+    linkedin_url: volunteer.linkedin_url?.trim() || "",
+    email: volunteer.email?.trim() || "",
+    date_onboarded: volunteer.date_onboarded || nowIso.slice(0, 10),
+    status: volunteer.status || "Draft",
+    created_at: volunteer.created_at || nowIso,
+    updated_at: nowIso
+  };
+
+  if (typeof window !== "undefined") {
+    try {
+      const cached = localStorage.getItem(VOLUNTEERS_CACHE_KEY);
+      let list: VolunteerProfile[] = cached ? JSON.parse(cached) : [];
+      list = list.filter((v) => v.id !== normalized.id);
+      list.unshift(normalized);
+      localStorage.setItem(VOLUNTEERS_CACHE_KEY, JSON.stringify(list));
+      window.dispatchEvent(new Event("rma_volunteers_updated"));
+    } catch (e) {}
+  }
+
+  let supabaseSynced = false;
+  let supabaseError: string | null = null;
+
+  // 1. Save to Supabase `volunteers` table
+  try {
+    const { saveVolunteerToSupabase } = await import("./supabaseCms");
+    const supaRes = await saveVolunteerToSupabase(normalized);
+    supabaseSynced = supaRes.success;
+    if (!supaRes.success && supaRes.error) {
+      supabaseError = supaRes.error;
+    }
+  } catch (e: any) {
+    supabaseError = e?.message || null;
+  }
+
+  // 2. Save to Firestore `volunteers` collection for guaranteed cross-refresh cloud persistence
+  try {
+    const { doc, setDoc } = await import("firebase/firestore");
+    const db = await getFirestoreDb();
+    await setDoc(doc(db, "volunteers", normalized.id), normalized);
+  } catch (err) {
+    console.warn("Firestore volunteer write queued:", err);
+    queueWrite({
+      type: "set",
+      collection: "volunteers",
+      docId: normalized.id,
+      data: normalized
+    }).catch(() => null);
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("rma_volunteers_updated"));
+  }
+
+  return {
+    success: true,
+    supabaseSynced,
+    error: supabaseError
+  };
+}
+
+/**
+ * Permanently delete a volunteer record from Supabase and Firestore.
+ */
+export async function deleteVolunteer(
+  id: string,
+  photoPath?: string
+): Promise<{ success: boolean; error: string | null }> {
+  if (typeof window !== "undefined") {
+    try {
+      const cached = localStorage.getItem(VOLUNTEERS_CACHE_KEY);
+      if (cached) {
+        let list: VolunteerProfile[] = JSON.parse(cached);
+        list = list.filter((v) => v.id !== id);
+        localStorage.setItem(VOLUNTEERS_CACHE_KEY, JSON.stringify(list));
+        window.dispatchEvent(new Event("rma_volunteers_updated"));
+      }
+    } catch (e) {}
+  }
+
+  let supabaseErr: string | null = null;
+  try {
+    const { deleteVolunteerFromSupabase } = await import("./supabaseCms");
+    const res = await deleteVolunteerFromSupabase(id, photoPath);
+    if (!res.success && res.error) {
+      supabaseErr = res.error;
+    }
+  } catch (e: any) {
+    supabaseErr = e?.message || null;
+  }
+
+  try {
+    const { doc, deleteDoc } = await import("firebase/firestore");
+    const db = await getFirestoreDb();
+    await deleteDoc(doc(db, "volunteers", id));
+  } catch (err) {
+    console.warn("Failed to delete volunteer from Firestore:", err);
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("rma_volunteers_updated"));
+  }
+
+  return { success: true, error: supabaseErr };
+}
+
 
 

@@ -29,6 +29,7 @@ import { getAdminWelcomeName } from "../lib/db";
 
 export type AdminTabType = 
   | "dashboard" 
+  | "volunteers"
   | "reg-cii" 
   | "reg-rma" 
   | "teen-bootcamp"
@@ -76,6 +77,7 @@ export const SUPER_ADMIN_ONLY_TABS: AdminTabType[] = [
 
 export const DEFAULT_LIMITED_ADMIN_TABS: AdminTabType[] = [
   "dashboard",
+  "volunteers",
   "reg-cii",
   "reg-rma",
   "teen-bootcamp",
@@ -96,15 +98,15 @@ export const ADMIN_ACCESS_PRESETS: {
   {
     id: "registrations-events",
     label: "Registrations & Events Admin",
-    description: "Manage CII, RMA, Teen Bootcamp registrations, Events, and Google Forms",
-    tabs: ["dashboard", "reg-cii", "reg-rma", "teen-bootcamp", "events", "google-forms", "visitors-live"],
+    description: "Manage CII, RMA, Teen Bootcamp registrations, Volunteers, Events, and Google Forms",
+    tabs: ["dashboard", "volunteers", "reg-cii", "reg-rma", "teen-bootcamp", "events", "google-forms", "visitors-live"],
     canWrite: true
   },
   {
     id: "content-media",
     label: "Content & Media Manager",
-    description: "Manage Events, Resources, Photo Gallery, Website Popups, Social Hub, Testimonials & Sponsors",
-    tabs: ["dashboard", "events", "resources", "gallery", "website-popups", "social-hub", "testimonials", "partners"],
+    description: "Manage Volunteers, Events, Resources, Photo Gallery, Website Popups, Social Hub, Testimonials & Sponsors",
+    tabs: ["dashboard", "volunteers", "events", "resources", "gallery", "website-popups", "social-hub", "testimonials", "partners"],
     canWrite: true
   },
   {
@@ -132,7 +134,7 @@ export const ADMIN_ACCESS_PRESETS: {
     id: "read-only-auditor",
     label: "Read-Only Auditor",
     description: "View-only access to dashboards, registries, and analytics without edit capabilities",
-    tabs: ["dashboard", "reg-cii", "reg-rma", "teen-bootcamp", "visitors-live", "visitors-analytics", "lms-analytics"],
+    tabs: ["dashboard", "volunteers", "reg-cii", "reg-rma", "teen-bootcamp", "visitors-live", "visitors-analytics", "lms-analytics"],
     canWrite: false
   }
 ];
@@ -154,6 +156,12 @@ export const ADMIN_MODULE_GROUPS: {
         id: "dashboard" as const,
         label: "Overview",
         icon: LayoutDashboard,
+        roles: ["Viewer (Read Only)", "Standard Write", "Super Admin", "Admin", "Viewer", "Mentor", "Editor"]
+      },
+      {
+        id: "volunteers" as const,
+        label: "Volunteers",
+        icon: Users,
         roles: ["Viewer (Read Only)", "Standard Write", "Super Admin", "Admin", "Viewer", "Mentor", "Editor"]
       }
     ]

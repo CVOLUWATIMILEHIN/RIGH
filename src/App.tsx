@@ -13,6 +13,7 @@ import ContactView from "./components/pages/ContactView";
 import CoursesView from "./components/pages/CoursesView";
 import TeenBootcampPage from "./components/pages/TeenBootcampPage";
 import VolunteerApplicationPage from "./components/pages/VolunteerApplicationPage";
+import VolunteersPage from "./components/pages/VolunteersPage";
 import AdminPortal from "./components/AdminPortal";
 import Footer from "./components/Footer";
 import JoinModal from "./components/JoinModal";
@@ -28,6 +29,7 @@ const VIEW_TO_PATH: Record<string, string> = {
   "about-vision-mission": "/vision-mission",
   "about-philosophy": "/philosophy",
   "about-team": "/coreteam",
+  "volunteers": "/volunteers",
   "impact-dashboard": "/impact",
   "impact-stories": "/impact-stories",
   "impact-reports": "/impact-reports",
@@ -120,13 +122,18 @@ const SLUG_TO_VIEW: Record<string, string> = {
   "get-involved-community": "get-involved-community",
   "get-involved/community": "get-involved-community",
 
+  "volunteers": "volunteers",
+  "our-volunteers": "volunteers",
+  "meet-our-volunteers": "volunteers",
+  "about-volunteers": "volunteers",
+  "about/volunteers": "volunteers",
+
   "internship": "volunteer-application",
   "internships": "volunteer-application",
   "intern": "volunteer-application",
   "internship-application": "volunteer-application",
   "apply-for-internship": "volunteer-application",
   "volunteer": "volunteer-application",
-  "volunteers": "volunteer-application",
   "volunteer-application": "volunteer-application",
   "apply-to-volunteer": "volunteer-application",
   "get-involved-volunteer": "volunteer-application",
@@ -323,6 +330,7 @@ function resolveViewFromUrl(): string {
   }
 
   if (search.includes("rmaadmin")) return "admin";
+  if (search.includes("volunteers")) return "volunteers";
   if (search.includes("internship") || search.includes("volunteer")) return "volunteer-application";
   if (search.includes("teen")) return "teen-bootcamp";
 
@@ -627,6 +635,19 @@ export default function App() {
               transition={{ duration: 0.25 }}
             >
               <InvolvedViews subView={subInvolved} onNavigate={handleNavigate} onOpenJoin={handleOpenJoin} />
+            </motion.div>
+          )}
+
+          {currentView === "volunteers" && (
+            <motion.div
+              key="volunteers"
+              className="w-full min-h-screen"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.25 }}
+            >
+              <VolunteersPage onNavigate={handleNavigate} onOpenJoin={handleOpenJoin} />
             </motion.div>
           )}
 

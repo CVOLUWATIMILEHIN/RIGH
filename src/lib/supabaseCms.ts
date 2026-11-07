@@ -440,11 +440,732 @@ export function subscribeToSupabaseCMSRealtime(onUpdate: (table: string, payload
     .on("postgres_changes", { event: "*", schema: "public", table: "site_settings" }, (payload) => {
       onUpdate("site_settings", payload);
     })
+    .on("postgres_changes", { event: "*", schema: "public", table: "volunteers" }, (payload) => {
+      onUpdate("volunteers", payload);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("rma_volunteers_updated"));
+      }
+    })
     .subscribe();
 
   return () => {
     supabase.removeChannel(channel);
   };
+}
+
+export type VolunteerPublicationStatus = "Draft" | "Published" | "Archived";
+
+export interface RMADepartmentStructure {
+  id: string;
+  number: number;
+  name: string;
+  positions: readonly string[];
+}
+
+/**
+ * Right-Minds Africa (RMA) Official 6 Main Volunteer Departments & Specialised Positions.
+ */
+export const RMA_MAIN_DEPARTMENTS: readonly RMADepartmentStructure[] = [
+  {
+    id: "CREATIVES",
+    number: 1,
+    name: "CREATIVES",
+    positions: [
+      "Graphic Design & Branding",
+      "Video Editing & Reels",
+      "Photography & Videography",
+      "Content Creation & Scriptwriting",
+      "Social Media Growth & Community Management"
+    ]
+  },
+  {
+    id: "COMMUNICATIONS & PUBLICATIONS",
+    number: 2,
+    name: "COMMUNICATIONS & PUBLICATIONS",
+    positions: [
+      "Article Writing",
+      "Blogging",
+      "Copywriting",
+      "Editorial Support"
+    ]
+  },
+  {
+    id: "PROGRAMMES & EVENTS",
+    number: 3,
+    name: "PROGRAMMES & EVENTS",
+    positions: [
+      "Programme Planning & Scheduling",
+      "Event Coordination",
+      "Event Logistics",
+      "Ushers and Event Operations"
+    ]
+  },
+  {
+    id: "COMMUNITY ENGAGEMENT & FACILITATION",
+    number: 4,
+    name: "COMMUNITY ENGAGEMENT & FACILITATION",
+    positions: [
+      "WhatsApp Group Moderation",
+      "Community Engagement",
+      "Public Speaking",
+      "MC and Event Hosting",
+      "Panel Discussion Moderation",
+      "Q&A Facilitation"
+    ]
+  },
+  {
+    id: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    number: 5,
+    name: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    positions: [
+      "Research",
+      "Report Writing",
+      "Data Documentation",
+      "Office Administration",
+      "Records Management"
+    ]
+  },
+  {
+    id: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    number: 6,
+    name: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    positions: [
+      "Strategic Partnerships",
+      "Sponsorship Outreach",
+      "Corporate Relations",
+      "Stakeholder Engagement"
+    ]
+  }
+] as const;
+
+/**
+ * The 6 Main RMA Departments used throughout the Volunteer Management System.
+ */
+export const RMA_VOLUNTEER_DEPARTMENTS: readonly string[] = RMA_MAIN_DEPARTMENTS.map(
+  (d) => d.name
+);
+
+/**
+ * All specialised positions across the 6 Main RMA Departments.
+ */
+export const RMA_ALL_POSITIONS: readonly string[] = RMA_MAIN_DEPARTMENTS.flatMap(
+  (d) => d.positions
+);
+
+export function getPositionsForDepartment(departmentName: string): readonly string[] {
+  const normalized = normalizeVolunteerDepartmentName(departmentName);
+  const found = RMA_MAIN_DEPARTMENTS.find(
+    (d) => d.name.toLowerCase() === normalized.toLowerCase()
+  );
+  return found ? found.positions : RMA_MAIN_DEPARTMENTS[0].positions;
+}
+
+export function getPositionsForDepartments(departmentNames: string[]): string[] {
+  const result: string[] = [];
+  const targets =
+    departmentNames.length > 0 ? departmentNames : [RMA_VOLUNTEER_DEPARTMENTS[0]];
+  for (const deptName of targets) {
+    const positions = getPositionsForDepartment(deptName);
+    for (const pos of positions) {
+      if (!result.includes(pos)) {
+        result.push(pos);
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Maps legacy 14-category values and legacy application roles to their canonical
+ * { department (one of the 6 Main Departments), position (Specialised Position) }.
+ */
+const LEGACY_TO_MAIN_DEPT_AND_POSITION: Record<
+  string,
+  { department: string; position: string }
+> = {
+  // 1. CREATIVES
+  "creatives": {
+    department: "CREATIVES",
+    position: "Graphic Design & Branding"
+  },
+  "creative and media": {
+    department: "CREATIVES",
+    position: "Graphic Design & Branding"
+  },
+  "graphic design & branding (canva, photoshop, illustrator)": {
+    department: "CREATIVES",
+    position: "Graphic Design & Branding"
+  },
+  "graphic design & branding": {
+    department: "CREATIVES",
+    position: "Graphic Design & Branding"
+  },
+  "graphic designer": {
+    department: "CREATIVES",
+    position: "Graphic Design & Branding"
+  },
+  "graphic design": {
+    department: "CREATIVES",
+    position: "Graphic Design & Branding"
+  },
+  "video editing & reels (capcut, premiere pro, davinci)": {
+    department: "CREATIVES",
+    position: "Video Editing & Reels"
+  },
+  "video editing & reels": {
+    department: "CREATIVES",
+    position: "Video Editing & Reels"
+  },
+  "video editor": {
+    department: "CREATIVES",
+    position: "Video Editing & Reels"
+  },
+  "video editing": {
+    department: "CREATIVES",
+    position: "Video Editing & Reels"
+  },
+  "photography & videography": {
+    department: "CREATIVES",
+    position: "Photography & Videography"
+  },
+  "photography": {
+    department: "CREATIVES",
+    position: "Photography & Videography"
+  },
+  "content creation & scriptwriting": {
+    department: "CREATIVES",
+    position: "Content Creation & Scriptwriting"
+  },
+  "content creator": {
+    department: "CREATIVES",
+    position: "Content Creation & Scriptwriting"
+  },
+  "content creation": {
+    department: "CREATIVES",
+    position: "Content Creation & Scriptwriting"
+  },
+  "social media growth & community management": {
+    department: "CREATIVES",
+    position: "Social Media Growth & Community Management"
+  },
+  "social media manager": {
+    department: "CREATIVES",
+    position: "Social Media Growth & Community Management"
+  },
+  "social media management": {
+    department: "CREATIVES",
+    position: "Social Media Growth & Community Management"
+  },
+
+  // 2. COMMUNICATIONS & PUBLICATIONS
+  "communications & publications": {
+    department: "COMMUNICATIONS & PUBLICATIONS",
+    position: "Article Writing"
+  },
+  "article writing, blogging & copywriting": {
+    department: "COMMUNICATIONS & PUBLICATIONS",
+    position: "Article Writing"
+  },
+  "article writing": {
+    department: "COMMUNICATIONS & PUBLICATIONS",
+    position: "Article Writing"
+  },
+  "blogging": {
+    department: "COMMUNICATIONS & PUBLICATIONS",
+    position: "Blogging"
+  },
+  "copywriting": {
+    department: "COMMUNICATIONS & PUBLICATIONS",
+    position: "Copywriting"
+  },
+  "editorial support": {
+    department: "COMMUNICATIONS & PUBLICATIONS",
+    position: "Editorial Support"
+  },
+  "writer / copywriter": {
+    department: "COMMUNICATIONS & PUBLICATIONS",
+    position: "Copywriting"
+  },
+  "writing and copywriting": {
+    department: "COMMUNICATIONS & PUBLICATIONS",
+    position: "Copywriting"
+  },
+  "content writer & creator": {
+    department: "COMMUNICATIONS & PUBLICATIONS",
+    position: "Article Writing"
+  },
+
+  // 3. PROGRAMMES & EVENTS
+  "programmes & events": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Programme Planning & Scheduling"
+  },
+  "programme planning & scheduling": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Programme Planning & Scheduling"
+  },
+  "programme coordinator": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Programme Planning & Scheduling"
+  },
+  "programme coordination": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Programme Planning & Scheduling"
+  },
+  "event coordination": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Event Coordination"
+  },
+  "event logistics": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Event Logistics"
+  },
+  "ushers and event operations": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Ushers and Event Operations"
+  },
+  "event logistics, ushers & coordination": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Event Coordination"
+  },
+  "event support intern": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Event Coordination"
+  },
+  "event planning": {
+    department: "PROGRAMMES & EVENTS",
+    position: "Event Logistics"
+  },
+
+  // 4. COMMUNITY ENGAGEMENT & FACILITATION
+  "community engagement & facilitation": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Community Engagement"
+  },
+  "whatsapp group moderation & engagement": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "WhatsApp Group Moderation"
+  },
+  "whatsapp group moderation": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "WhatsApp Group Moderation"
+  },
+  "whatsapp community manager": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "WhatsApp Group Moderation"
+  },
+  "community management": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Community Engagement"
+  },
+  "community engagement": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Community Engagement"
+  },
+  "community engagement intern": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Community Engagement"
+  },
+  "public speaking & mc / event hosting": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Public Speaking"
+  },
+  "public speaking": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Public Speaking"
+  },
+  "mc and event hosting": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "MC and Event Hosting"
+  },
+  "public speaker / event host": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "MC and Event Hosting"
+  },
+  "panel discussion moderation & q&a facilitation": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Panel Discussion Moderation"
+  },
+  "panel discussion moderation": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Panel Discussion Moderation"
+  },
+  "q&a facilitation": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Q&A Facilitation"
+  },
+  "event moderator": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Panel Discussion Moderation"
+  },
+  "event moderation": {
+    department: "COMMUNITY ENGAGEMENT & FACILITATION",
+    position: "Panel Discussion Moderation"
+  },
+
+  // 5. RESEARCH, DOCUMENTATION & ADMINISTRATION
+  "research, documentation & administration": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Research"
+  },
+  "research, report writing & data documentation": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Research"
+  },
+  "research": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Research"
+  },
+  "report writing": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Report Writing"
+  },
+  "data documentation": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Data Documentation"
+  },
+  "research and documentation intern": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Research"
+  },
+  "research and documentation": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Research"
+  },
+  "office administration & records": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Office Administration"
+  },
+  "office administration": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Office Administration"
+  },
+  "records management": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Records Management"
+  },
+  "administrative / operations intern": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Office Administration"
+  },
+  "administration": {
+    department: "RESEARCH, DOCUMENTATION & ADMINISTRATION",
+    position: "Office Administration"
+  },
+
+  // 6. PARTNERSHIPS & RESOURCE MOBILISATION
+  "partnerships & resource mobilisation": {
+    department: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    position: "Strategic Partnerships"
+  },
+  "strategic partnerships & sponsorship outreach": {
+    department: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    position: "Strategic Partnerships"
+  },
+  "strategic partnerships": {
+    department: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    position: "Strategic Partnerships"
+  },
+  "sponsorship outreach": {
+    department: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    position: "Sponsorship Outreach"
+  },
+  "corporate relations": {
+    department: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    position: "Corporate Relations"
+  },
+  "stakeholder engagement": {
+    department: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    position: "Stakeholder Engagement"
+  },
+  "outreach and partnership intern": {
+    department: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    position: "Strategic Partnerships"
+  },
+  "partnership and outreach": {
+    department: "PARTNERSHIPS & RESOURCE MOBILISATION",
+    position: "Strategic Partnerships"
+  }
+};
+
+/**
+ * Normalizes any raw department string or legacy 14-department string to one of the 6 Main RMA Departments.
+ */
+export function normalizeVolunteerDepartmentName(raw: string, fallbackPosition?: string): string {
+  const trimmed = (raw || fallbackPosition || "").trim();
+  if (!trimmed) return "";
+
+  // 1. Direct match against the 6 Main Departments
+  const exactMain = RMA_MAIN_DEPARTMENTS.find(
+    (d) => d.name.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (exactMain) return exactMain.name;
+
+  // 2. Direct match against legacy / position mapping
+  const mapped = LEGACY_TO_MAIN_DEPT_AND_POSITION[trimmed.toLowerCase()];
+  if (mapped) return mapped.department;
+
+  // 3. Check if raw string matches any official position inside the 6 Main Departments
+  for (const dept of RMA_MAIN_DEPARTMENTS) {
+    if (
+      dept.positions.some((p) => p.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      return dept.name;
+    }
+  }
+
+  if (fallbackPosition) {
+    const fb = fallbackPosition.trim();
+    const fbMapped = LEGACY_TO_MAIN_DEPT_AND_POSITION[fb.toLowerCase()];
+    if (fbMapped) return fbMapped.department;
+    for (const dept of RMA_MAIN_DEPARTMENTS) {
+      if (dept.positions.some((p) => p.toLowerCase() === fb.toLowerCase())) {
+        return dept.name;
+      }
+    }
+  }
+
+  return trimmed.toUpperCase();
+}
+
+/**
+ * Normalizes a position/role string, mapping legacy 14-department strings to their concise position name if needed.
+ */
+export function normalizeVolunteerPositionName(
+  rawPosition?: string | null,
+  rawDepartmentFallback?: string | null
+): string {
+  const trimmedPos = (rawPosition || "").trim();
+  if (trimmedPos) {
+    // If someone passed a legacy 14-dept name as the role, map it cleanly to the position
+    const mappedFromPos = LEGACY_TO_MAIN_DEPT_AND_POSITION[trimmedPos.toLowerCase()];
+    if (mappedFromPos && trimmedPos.includes("(")) {
+      return mappedFromPos.position;
+    }
+    return trimmedPos;
+  }
+
+  // Fallback: infer position from rawDepartmentFallback if it was a legacy 14-department value
+  const trimmedDept = (rawDepartmentFallback || "").trim();
+  if (trimmedDept) {
+    const mappedFromDept = LEGACY_TO_MAIN_DEPT_AND_POSITION[trimmedDept.toLowerCase()];
+    if (mappedFromDept) return mappedFromDept.position;
+  }
+
+  return RMA_MAIN_DEPARTMENTS[0].positions[0];
+}
+
+export function parseVolunteerDepartments(
+  departmentField?: string | null,
+  departmentsArray?: string[] | null
+): string[] {
+  const result: string[] = [];
+  const addUnique = (val: string) => {
+    const norm = normalizeVolunteerDepartmentName(val);
+    if (norm && !result.includes(norm)) {
+      result.push(norm);
+    }
+  };
+
+  if (Array.isArray(departmentsArray) && departmentsArray.length > 0) {
+    departmentsArray.forEach((d) => {
+      if (typeof d === "string") addUnique(d);
+    });
+  }
+
+  if (typeof departmentField === "string" && departmentField.trim()) {
+    const rawStr = departmentField.trim();
+    if (rawStr.includes(" | ")) {
+      rawStr.split(" | ").forEach(addUnique);
+    } else if (rawStr.includes(";")) {
+      rawStr.split(";").forEach(addUnique);
+    } else {
+      addUnique(rawStr);
+    }
+  }
+
+  return result;
+}
+
+export function formatVolunteerDepartmentsString(departments: string[]): string {
+  const cleaned = departments.map((d) => normalizeVolunteerDepartmentName(d)).filter(Boolean);
+  return Array.from(new Set(cleaned)).join(" | ");
+}
+
+export interface VolunteerRecord {
+  id: string;
+  full_name: string;
+  slug: string;
+  role: string; // Stores the Specific Position / Specialisation
+  position?: string; // Explicit alias for Specific Position
+  department: string; // Stores the Main Department (one or more of the 6 Main Departments)
+  departments?: string[];
+  biography: string;
+  expertise: string[];
+  photo_url: string;
+  photo_path?: string;
+  linkedin_url?: string;
+  email?: string; // Private administrator field — omitted on public queries
+  date_onboarded: string;
+  status: VolunteerPublicationStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export function generateVolunteerSlug(fullName: string, idSuffix?: string): string {
+  const base = (fullName || "volunteer")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+  return idSuffix ? `${base}-${idSuffix}` : base;
+}
+
+/**
+ * Fetch volunteers from Supabase.
+ * When `publicOnly` is true, queries only published profiles and excludes the private `email` column.
+ */
+export async function fetchVolunteersFromSupabase(options?: {
+  publicOnly?: boolean;
+}): Promise<{ data: VolunteerRecord[] | null; error: string | null }> {
+  if (!supabase || !isSupabaseConfigured) {
+    return { data: null, error: "Supabase client not configured" };
+  }
+
+  try {
+    const publicColumns =
+      "id, full_name, slug, role, department, biography, expertise, photo_url, photo_path, linkedin_url, date_onboarded, status, created_at, updated_at";
+    const adminColumns = `${publicColumns}, email`;
+
+    let query = supabase
+      .from("volunteers")
+      .select(options?.publicOnly ? publicColumns : adminColumns)
+      .order("date_onboarded", { ascending: false });
+
+    if (options?.publicOnly) {
+      query = query.eq("status", "Published");
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    const mapped: VolunteerRecord[] = (data || []).map((row: any) => {
+      const parsedDepts = parseVolunteerDepartments(row.department, row.departments);
+      const formattedDeptString =
+        parsedDepts.length > 0
+          ? formatVolunteerDepartmentsString(parsedDepts)
+          : RMA_VOLUNTEER_DEPARTMENTS[0];
+      const resolvedPosition = normalizeVolunteerPositionName(
+        row.position || row.role,
+        row.department
+      );
+
+      return {
+        id: row.id,
+        full_name: row.full_name || "",
+        slug: row.slug || generateVolunteerSlug(row.full_name || "", row.id?.slice(-4)),
+        role: resolvedPosition,
+        position: resolvedPosition,
+        department: formattedDeptString,
+        departments: parsedDepts.length > 0 ? parsedDepts : [formattedDeptString],
+        biography: row.biography || "",
+        expertise: Array.isArray(row.expertise)
+          ? row.expertise
+          : typeof row.expertise === "string" && row.expertise.trim()
+          ? row.expertise.split(",").map((s: string) => s.trim()).filter(Boolean)
+          : [],
+        photo_url: row.photo_url || "",
+        photo_path: row.photo_path || "",
+        linkedin_url: row.linkedin_url || "",
+        ...(options?.publicOnly ? {} : { email: row.email || "" }),
+        date_onboarded: row.date_onboarded || (row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10)),
+        status: (row.status as VolunteerPublicationStatus) || "Draft",
+        created_at: row.created_at || new Date().toISOString(),
+        updated_at: row.updated_at || new Date().toISOString()
+      };
+    });
+
+    return { data: mapped, error: null };
+  } catch (err: any) {
+    return { data: null, error: err?.message || "Failed to fetch volunteers from Supabase" };
+  }
+}
+
+/**
+ * Save (insert or update) a volunteer record in Supabase.
+ * Stores Main Department (`department`) separately from Specific Position (`role`).
+ */
+export async function saveVolunteerToSupabase(
+  volunteer: VolunteerRecord
+): Promise<{ success: boolean; error: string | null }> {
+  if (!supabase || !isSupabaseConfigured) {
+    return { success: false, error: "Supabase credentials not set in environment." };
+  }
+
+  try {
+    const parsedDepts = parseVolunteerDepartments(volunteer.department, volunteer.departments);
+    const departmentStr =
+      parsedDepts.length > 0
+        ? formatVolunteerDepartmentsString(parsedDepts)
+        : normalizeVolunteerDepartmentName(volunteer.department) || RMA_VOLUNTEER_DEPARTMENTS[0];
+    const resolvedPosition = normalizeVolunteerPositionName(
+      volunteer.position || volunteer.role,
+      volunteer.department
+    );
+
+    const payload = {
+      id: volunteer.id,
+      full_name: volunteer.full_name.trim(),
+      slug: volunteer.slug || generateVolunteerSlug(volunteer.full_name, volunteer.id.slice(-4)),
+      role: resolvedPosition,
+      department: departmentStr,
+      biography: volunteer.biography.trim(),
+      expertise: Array.isArray(volunteer.expertise) ? volunteer.expertise : [],
+      photo_url: volunteer.photo_url,
+      photo_path: volunteer.photo_path || "",
+      linkedin_url: volunteer.linkedin_url?.trim() || "",
+      email: volunteer.email?.trim() || "",
+      date_onboarded: volunteer.date_onboarded || new Date().toISOString().slice(0, 10),
+      status: volunteer.status,
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from("volunteers").upsert(payload, { onConflict: "id" });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true, error: null };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to save volunteer to Supabase" };
+  }
+}
+
+/**
+ * Delete a volunteer record from Supabase (and remove their storage object if stored in cms-media)
+ */
+export async function deleteVolunteerFromSupabase(
+  id: string,
+  photoPath?: string
+): Promise<{ success: boolean; error: string | null }> {
+  if (!supabase || !isSupabaseConfigured) {
+    return { success: false, error: "Supabase credentials not set in environment." };
+  }
+
+  try {
+    if (photoPath && photoPath.startsWith("volunteers/")) {
+      await supabase.storage.from("cms-media").remove([photoPath]).catch(() => null);
+    }
+    const { error } = await supabase.from("volunteers").delete().eq("id", id);
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true, error: null };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to delete volunteer from Supabase" };
+  }
 }
 
 /**

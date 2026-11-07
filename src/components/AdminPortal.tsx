@@ -115,6 +115,7 @@ import AdminLiveChat from "./AdminLiveChat";
 import AdminTeenBootcamp from "./AdminTeenBootcamp";
 import AdminWebsitePopups from "./AdminWebsitePopups";
 import AdminBrandCloner from "./AdminBrandCloner";
+import AdminVolunteers from "./AdminVolunteers";
 import brandLogo from "../assets/images/brand_logo_official_new_1780385523572.png";
 import { SYSTEM_PRD_DOCUMENT } from "../lib/prd";
 import { useBrandConfig } from "../lib/brandConfig";
@@ -2886,6 +2887,16 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
                   latestLogs={terminalLogs}
                   pendingSyncCount={pendingSyncCount}
                   failedSubmissionsCount={failedSubmissionsCount}
+                />
+              </motion.div>
+            )}
+
+            {/* Tab: Volunteer Management CMS */}
+            {activeTab === "volunteers" && (
+              <motion.div key="volunteers" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <AdminVolunteers
+                  hasWriteAccess={hasContentWriteAccess}
+                  onLogAction={addTerminalLog}
                 />
               </motion.div>
             )}

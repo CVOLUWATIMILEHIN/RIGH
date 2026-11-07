@@ -8,65 +8,43 @@ import {
   FileSpreadsheet, Settings, RefreshCw, Globe, Maximize2, Minimize2, Download, Copy, MessageCircle
 } from "lucide-react";
 import { saveRegistration, savePortalApplication, getPortalApplications, getFirestoreDb } from "../../lib/db";
+import {
+  RMA_MAIN_DEPARTMENTS,
+  RMA_VOLUNTEER_DEPARTMENTS,
+  getPositionsForDepartment,
+  normalizeVolunteerDepartmentName,
+  normalizeVolunteerPositionName,
+} from "../../lib/supabaseCms";
 
 interface VolunteerApplicationPageProps {
   onNavigate: (view: string) => void;
   onOpenJoin?: (profile?: string) => void;
 }
 
-export const VOLUNTEER_ROLES = [
-  {
-    category: "Creative and Media",
-    roles: [
-      { id: "Graphic Designer", label: "Graphic Designer", desc: "Designs flyers, campaign graphics, event materials and social media creatives." },
-      { id: "Video Editor", label: "Video Editor", desc: "Edits event videos, interviews, promotional videos and short-form content." },
-      { id: "Content Creator", label: "Content Creator", desc: "Develops content ideas, scripts, captions and educational content." },
-      { id: "Social Media Manager", label: "Social Media Manager", desc: "Plans content calendars, schedules posts, manages engagement and supports online growth." },
-      { id: "Writer / Copywriter", label: "Writer / Copywriter", desc: "Develops articles, newsletters, announcements and campaign copy." }
-    ]
-  },
-  {
-    category: "Programmes and Community",
-    roles: [
-      { id: "Programme Coordinator", label: "Programme Coordinator", desc: "Supports programme planning, scheduling, team coordination and execution." },
-      { id: "WhatsApp Community Manager", label: "WhatsApp Community Manager", desc: "Welcomes members, shares approved updates, encourages engagement and moderates discussions." },
-      { id: "Community Engagement Intern", label: "Community Engagement Intern", desc: "Supports outreach, member engagement and community growth." },
-      { id: "Research and Documentation Intern", label: "Research and Documentation Intern", desc: "Researches relevant topics and documents programme activities and outcomes." }
-    ]
-  },
-  {
-    category: "Events and Operations",
-    roles: [
-      { id: "Public Speaker / Event Host", label: "Public Speaker / Event Host", desc: "Hosts events, introduces speakers and engages audiences." },
-      { id: "Event Moderator", label: "Event Moderator", desc: "Facilitates discussions, manages Q&A sessions and maintains productive conversations." },
-      { id: "Event Support Intern", label: "Event Support Intern", desc: "Assists with event planning, registration, logistics and coordination." },
-      { id: "Outreach and Partnership Intern", label: "Outreach and Partnership Intern", desc: "Identifies potential collaborators and supports partnership development." },
-      { id: "Administrative / Operations Intern", label: "Administrative / Operations Intern", desc: "Assists with scheduling, records and internal coordination." }
-    ]
-  },
-  {
-    category: "General",
-    roles: [
-      { id: "Other / Open to Opportunities", label: "Other / Open to Opportunities", desc: "Willing to contribute across general areas based on team requirements." }
-    ]
-  }
-];
+export const VOLUNTEER_ROLES = RMA_MAIN_DEPARTMENTS.map((dept) => ({
+  category: dept.name,
+  roles: dept.positions.map((pos) => ({
+    id: pos,
+    label: pos,
+    desc: `Contribute to ${dept.name} through ${pos}.`,
+  })),
+}));
 
 export const SKILL_OPTIONS = [
-  "Graphic Design",
-  "Video Editing",
-  "Photography",
-  "Content Creation",
-  "Social Media Management",
-  "Writing and Copywriting",
-  "Programme Coordination",
-  "Community Management",
-  "Public Speaking",
-  "Event Moderation",
-  "Event Planning",
-  "Research and Documentation",
-  "Administration",
-  "Partnership and Outreach",
+  "Graphic Design & Branding",
+  "Video Editing & Reels",
+  "Photography & Videography",
+  "Content Creation & Scriptwriting",
+  "Social Media Growth & Community Management",
+  "Article Writing, Blogging & Copywriting",
+  "Programme Planning & Scheduling",
+  "Event Coordination & Logistics",
+  "WhatsApp Group Moderation & Community Engagement",
+  "Public Speaking, MC & Panel Moderation",
+  "Research, Report Writing & Data Documentation",
+  "Office Administration & Records Management",
+  "Strategic Partnerships & Sponsorship Outreach",
+  "Corporate Relations & Stakeholder Engagement",
   "Other"
 ];
 
@@ -131,7 +109,8 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
   const [location, setLocation] = useState("");
   const [contactMethod, setContactMethod] = useState<"WhatsApp" | "Phone Call" | "Email">("WhatsApp");
 
-  const [primaryRole, setPrimaryRole] = useState("Graphic Designer");
+  const [selectedDepartment, setSelectedDepartment] = useState<string>(RMA_VOLUNTEER_DEPARTMENTS[0]);
+  const [primaryRole, setPrimaryRole] = useState<string>(RMA_MAIN_DEPARTMENTS[0].positions[0]);
   const [secondaryRole, setSecondaryRole] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [previousExperience, setPreviousExperience] = useState("");
@@ -152,6 +131,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     id: string;
     fullName: string;
     email: string;
+    department: string;
     primaryRole: string;
     secondaryRole?: string;
     contactMethod: string;
@@ -172,7 +152,8 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
   const [gfName, setGfName] = useState("");
   const [gfEmail, setGfEmail] = useState("");
   const [gfPhone, setGfPhone] = useState("");
-  const [gfRole, setGfRole] = useState("Graphic Designer");
+  const [gfDepartment, setGfDepartment] = useState<string>(RMA_VOLUNTEER_DEPARTMENTS[0]);
+  const [gfRole, setGfRole] = useState<string>(RMA_MAIN_DEPARTMENTS[0].positions[0]);
   const [gfSending, setGfSending] = useState(false);
   const [gfError, setGfError] = useState<string | null>(null);
   const [showPostSubmitModal, setShowPostSubmitModal] = useState(false);
@@ -189,23 +170,28 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
       }
 
       // Convert to CSV
-      const headers = ["Application ID", "Full Name", "Email Address", "Phone Number", "Location", "Primary Role", "Secondary Role", "Relevant Skills", "Why Volunteer", "Value Brought", "Video URL", "Availability", "Work Arrangement", "Submitted At"];
-      const rows = volunteerApps.map(a => [
-        `"${a.id}"`,
-        `"${(a.fullName || '').replace(/"/g, '""')}"`,
-        `"${(a.email || '').replace(/"/g, '""')}"`,
-        `"${(a.phone || '').replace(/"/g, '""')}"`,
-        `"${(a.options?.location || '').replace(/"/g, '""')}"`,
-        `"${(a.options?.primaryRole || '').replace(/"/g, '""')}"`,
-        `"${(a.options?.secondaryRole || '').replace(/"/g, '""')}"`,
-        `"${(Array.isArray(a.options?.relevantSkills) ? a.options.relevantSkills.join(', ') : '').replace(/"/g, '""')}"`,
-        `"${(a.options?.whyVolunteer || a.notes || '').replace(/"/g, '""')}"`,
-        `"${(a.options?.valueContribution || '').replace(/"/g, '""')}"`,
-        `"${(a.options?.videoUrl || '').replace(/"/g, '""')}"`,
-        `"${(a.options?.availability || '').replace(/"/g, '""')}"`,
-        `"${(a.options?.workArrangement || '').replace(/"/g, '""')}"`,
-        `"${a.appliedAt || a.options?.submittedAt || ''}"`
-      ]);
+      const headers = ["Application ID", "Full Name", "Email Address", "Phone Number", "Location", "Main Department", "Position / Specialisation", "Secondary Position", "Relevant Skills", "Why Volunteer", "Value Brought", "Video URL", "Availability", "Work Arrangement", "Submitted At"];
+      const rows = volunteerApps.map(a => {
+        const rawDept = a.options?.department || a.options?.primaryRole || "";
+        const rawPos = a.options?.position || a.options?.primaryRole || "";
+        return [
+          `"${a.id}"`,
+          `"${(a.fullName || '').replace(/"/g, '""')}"`,
+          `"${(a.email || '').replace(/"/g, '""')}"`,
+          `"${(a.phone || '').replace(/"/g, '""')}"`,
+          `"${(a.options?.location || '').replace(/"/g, '""')}"`,
+          `"${normalizeVolunteerDepartmentName(rawDept, rawPos).replace(/"/g, '""')}"`,
+          `"${normalizeVolunteerPositionName(rawPos, rawDept).replace(/"/g, '""')}"`,
+          `"${(a.options?.secondaryRole || '').replace(/"/g, '""')}"`,
+          `"${(Array.isArray(a.options?.relevantSkills) ? a.options.relevantSkills.join(', ') : '').replace(/"/g, '""')}"`,
+          `"${(a.options?.whyVolunteer || a.notes || '').replace(/"/g, '""')}"`,
+          `"${(a.options?.valueContribution || '').replace(/"/g, '""')}"`,
+          `"${(a.options?.videoUrl || '').replace(/"/g, '""')}"`,
+          `"${(a.options?.availability || '').replace(/"/g, '""')}"`,
+          `"${(a.options?.workArrangement || '').replace(/"/g, '""')}"`,
+          `"${a.appliedAt || a.options?.submittedAt || ''}"`
+        ];
+      });
 
       const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
       const encodedUri = encodeURI(csvContent);
@@ -392,6 +378,22 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     }
   };
 
+  const handleSelectDepartmentChange = (deptName: string) => {
+    setSelectedDepartment(deptName);
+    const positions = getPositionsForDepartment(deptName);
+    if (positions.length > 0 && !positions.includes(primaryRole)) {
+      setPrimaryRole(positions[0]);
+    }
+    if (fieldErrors.department || fieldErrors.primaryRole) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next.department;
+        delete next.primaryRole;
+        return next;
+      });
+    }
+  };
+
   const validateForm = () => {
     const errors: Record<string, string> = {};
 
@@ -417,8 +419,12 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     }
 
     // Section B
+    if (!selectedDepartment) {
+      errors.department = "Please select one of the 6 main departments.";
+    }
+
     if (!primaryRole) {
-      errors.primaryRole = "Please select a primary internship role.";
+      errors.primaryRole = "Please select your preferred position within the department.";
     }
 
     if (selectedSkills.length === 0) {
@@ -476,6 +482,9 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
     setIsSubmitting(true);
 
     try {
+      const canonicalDepartment = normalizeVolunteerDepartmentName(selectedDepartment, primaryRole);
+      const canonicalPosition = normalizeVolunteerPositionName(primaryRole, canonicalDepartment);
+
       const reg = await saveRegistration({
         fullName: fullName.trim(),
         email: email.trim(),
@@ -484,12 +493,12 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
         profileType: "volunteer",
         programType: "internship",
         programName: "Internship Application",
-        department: primaryRole,
-        primaryRole,
+        department: canonicalDepartment,
+        primaryRole: canonicalPosition,
         contactMethod,
         availableHours: `${availability} (${workArrangement})`,
         whatsappLink: whatsappGroupUrl,
-        notes: `[Internship Application] Primary Role: ${primaryRole}${secondaryRole ? ` | Second Choice: ${secondaryRole}` : ""} | Contact Method: ${contactMethod} | Video: ${videoUrl.trim()}`
+        notes: `[Internship Application] Main Department: ${canonicalDepartment} | Position: ${canonicalPosition}${secondaryRole ? ` | Second Choice: ${secondaryRole}` : ""} | Contact Method: ${contactMethod} | Video: ${videoUrl.trim()}`
       });
 
       const portalApp = await savePortalApplication({
@@ -501,7 +510,9 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
         options: {
           location: location.trim(),
           preferredContactMethod: contactMethod,
-          primaryRole,
+          department: canonicalDepartment,
+          position: canonicalPosition,
+          primaryRole: canonicalPosition,
           secondaryRole: secondaryRole || "None",
           relevantSkills: selectedSkills,
           previousExperience: previousExperience.trim() || "N/A",
@@ -521,7 +532,8 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
         id: portalApp?.id || reg?.id || `VOL-${Date.now().toString().slice(-6)}`,
         fullName: fullName.trim(),
         email: email.trim(),
-        primaryRole,
+        department: canonicalDepartment,
+        primaryRole: canonicalPosition,
         secondaryRole: secondaryRole || undefined,
         contactMethod,
         submittedAt: new Date().toLocaleDateString("en-GB", {
@@ -563,7 +575,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
         email: submittedApp.email,
         programType: "internship",
         programName: "Internship & Volunteer Application",
-        department: submittedApp.primaryRole,
+        department: submittedApp.department,
         primaryRole: submittedApp.primaryRole,
         contactMethod: submittedApp.contactMethod,
         whatsappLink: whatsappGroupUrl,
@@ -600,6 +612,9 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
 
     setGfSending(true);
     try {
+      const canonicalDepartment = normalizeVolunteerDepartmentName(gfDepartment, gfRole);
+      const canonicalPosition = normalizeVolunteerPositionName(gfRole, canonicalDepartment);
+
       const reg = await saveRegistration({
         fullName: gfName.trim(),
         email: gfEmail.trim(),
@@ -608,11 +623,11 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
         profileType: "volunteer",
         programType: "internship",
         programName: "Internship Application",
-        department: gfRole,
-        primaryRole: gfRole,
+        department: canonicalDepartment,
+        primaryRole: canonicalPosition,
         contactMethod: "WhatsApp",
         whatsappLink: whatsappGroupUrl,
-        notes: `[Google Form Internship Application] Primary Role: ${gfRole}`
+        notes: `[Google Form Internship Application] Main Department: ${canonicalDepartment} | Position: ${canonicalPosition}`
       });
 
       const portalApp = await savePortalApplication({
@@ -620,9 +635,11 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
         email: gfEmail.trim(),
         phone: gfPhone.trim() || "Provided via Google Form",
         type: "volunteer",
-        notes: `Submitted via Embedded Google Form — Role: ${gfRole}`,
+        notes: `Submitted via Embedded Google Form — Department: ${canonicalDepartment} | Position: ${canonicalPosition}`,
         options: {
-          primaryRole: gfRole,
+          department: canonicalDepartment,
+          position: canonicalPosition,
+          primaryRole: canonicalPosition,
           preferredContactMethod: "WhatsApp",
           whatsappLink: whatsappGroupUrl,
           submittedVia: "Google Form",
@@ -634,7 +651,8 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
         id: portalApp?.id || reg?.id || `VOL-${Date.now().toString().slice(-6)}`,
         fullName: gfName.trim(),
         email: gfEmail.trim(),
-        primaryRole: gfRole,
+        department: canonicalDepartment,
+        primaryRole: canonicalPosition,
         contactMethod: "WhatsApp & Email",
         submittedAt: new Date().toLocaleDateString("en-GB", {
           day: "numeric",
@@ -651,6 +669,9 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
       setGfSending(false);
     }
   };
+
+  const departmentPositions = getPositionsForDepartment(selectedDepartment);
+  const gfDepartmentPositions = getPositionsForDepartment(gfDepartment);
 
   return (
     // Full screen width container: stretches across the entire viewport without being shrunk into the middle
@@ -773,13 +794,17 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
             <div>
               <span className="text-slate-400 font-mono text-3xs uppercase block">Applicant Name</span>
               <strong className="text-slate-900 text-sm">{submittedApp.fullName}</strong>
             </div>
             <div>
-              <span className="text-slate-400 font-mono text-3xs uppercase block">Primary Role Applied For</span>
+              <span className="text-slate-400 font-mono text-3xs uppercase block">Main Department</span>
+              <strong className="text-amber-700 text-xs uppercase">{submittedApp.department}</strong>
+            </div>
+            <div>
+              <span className="text-slate-400 font-mono text-3xs uppercase block">Position Applied For</span>
               <strong className="text-[#0E3A2F] text-sm">{submittedApp.primaryRole}</strong>
             </div>
             <div>
@@ -857,7 +882,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           <div className="w-full bg-[#FAF8F3] border border-[#0E3A2F]/15 rounded-3xl p-6 sm:p-10 md:p-12 lg:p-14 text-left space-y-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <span className="text-[10px] font-black uppercase text-amber-700 bg-amber-500/10 border border-amber-500/20 px-3.5 py-1.5 rounded-full font-mono">
-                ✨ Apply for Internship
+                ✨ Apply for Internship &amp; Volunteering
               </span>
             </div>
 
@@ -867,10 +892,10 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
 
             <div className="w-full max-w-5xl space-y-4 text-slate-700 text-sm sm:text-base md:text-lg leading-relaxed font-normal">
               <p>
-                At Right-Minds Africa Hub, we believe that meaningful change happens when people use their skills, knowledge and passion to empower others. We are building a team of committed interns who want to develop young people, strengthen our programmes and create lasting impact across Africa.
+                At Right-Minds Africa Hub, we believe that meaningful change happens when people use their skills, knowledge and passion to empower others. We are building a team of committed interns and volunteers who want to develop young people, strengthen our programmes and create lasting impact across Africa.
               </p>
               <p>
-                Whether you are a creative professional, communicator, event organiser, community builder or someone willing to contribute and learn, there may be a place for you on our team.
+                Whether you are a creative professional, communicator, event organiser, community builder, researcher or partnership strategist, there is a place for you across our 6 Main Departments.
               </p>
             </div>
 
@@ -897,158 +922,76 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
           </div>
 
           {/* =========================================================================
-              2. INTERNSHIP ROLES SHOWCASE (Full Width Across All Columns)
+              2. 6 MAIN DEPARTMENTS & SPECIALISED POSITIONS SHOWCASE
               ========================================================================= */}
           <div className="w-full space-y-8 text-left">
             <div className="border-l-4 border-[#0E3A2F] pl-4">
               <span className="text-[10px] font-black uppercase text-[#0E3A2F] font-mono tracking-widest bg-[#FAF8F3] border border-[#0E3A2F]/10 px-3 py-1 rounded-full">
-                💼 Internship Roles
+                💼 6 Main Departments &amp; Specialisations
               </span>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display uppercase tracking-tight mt-2">
                 Explore Where You Can Make an Impact
               </h2>
               <p className="text-xs sm:text-sm text-slate-600 mt-1">
-                We are recruiting committed interns across three key divisions. Review the opportunities below, then complete the application form to apply.
+                Right-Minds Africa is structured into 6 Main Departments, each containing specialised positions and functions. Select a department or position below to apply.
               </p>
             </div>
 
-            <div className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-              {/* Creative and Media */}
-              <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col justify-between space-y-5">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-[#0E3A2F]/10 text-[#0E3A2F] rounded-xl">
-                      <Palette size={20} />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-sm sm:text-base text-slate-900 uppercase tracking-wide">Creative and Media</h3>
-                      <span className="text-[10px] text-slate-400 font-mono">5 Open Positions</span>
-                    </div>
-                  </div>
-                  <ul className="space-y-3 text-xs text-slate-600">
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">1. Graphic Designer</strong>
-                      Designs flyers, campaign graphics, event materials and social media creatives.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">2. Video Editor</strong>
-                      Edits event videos, interviews, promotional videos and short-form content.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">3. Content Creator</strong>
-                      Develops content ideas, scripts, captions and educational content.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">4. Social Media Manager</strong>
-                      Plans content calendars, schedules posts, manages engagement and online growth.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">5. Writer / Copywriter</strong>
-                      Develops articles, newsletters, announcements and campaign copy.
-                    </li>
-                  </ul>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPrimaryRole("Graphic Designer");
-                    scrollToForm();
-                  }}
-                  className="w-full py-3 bg-slate-100 hover:bg-[#0E3A2F] hover:text-white text-slate-800 text-xs font-extrabold uppercase tracking-wider rounded-xl cursor-pointer transition-all"
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {RMA_MAIN_DEPARTMENTS.map((dept, deptIdx) => (
+                <div
+                  key={dept.name}
+                  className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-7 shadow-sm flex flex-col justify-between space-y-5 hover:border-[#0E3A2F]/30 transition-all"
                 >
-                  Apply for Creative Roles &darr;
-                </button>
-              </div>
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 bg-[#0E3A2F]/10 text-[#0E3A2F] rounded-xl flex items-center justify-center font-black text-xs shrink-0">
+                        {deptIdx + 1}
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-sm sm:text-base text-slate-900 uppercase tracking-wide leading-snug">
+                          {dept.name}
+                        </h3>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {dept.positions.length} Specialised Positions
+                        </span>
+                      </div>
+                    </div>
 
-              {/* Programmes and Community */}
-              <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col justify-between space-y-5">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-[#0E3A2F]/10 text-[#0E3A2F] rounded-xl">
-                      <Users size={20} />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-sm sm:text-base text-slate-900 uppercase tracking-wide">Programmes & Community</h3>
-                      <span className="text-[10px] text-slate-400 font-mono">4 Open Positions</span>
-                    </div>
+                    <ul className="space-y-2 text-xs text-slate-700">
+                      {dept.positions.map((pos) => (
+                        <li
+                          key={pos}
+                          onClick={() => {
+                            setSelectedDepartment(dept.name);
+                            setPrimaryRole(pos);
+                            setFormMode("interactive");
+                            scrollToForm();
+                          }}
+                          className="p-2.5 bg-slate-50 hover:bg-[#0E3A2F]/5 rounded-xl border border-slate-100 hover:border-[#0E3A2F]/20 flex items-center justify-between gap-2 cursor-pointer transition-all group"
+                        >
+                          <span className="font-bold text-slate-800 group-hover:text-[#0E3A2F]">
+                            {pos}
+                          </span>
+                          <ArrowRight size={13} className="text-slate-300 group-hover:text-[#0E3A2F] shrink-0" />
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <ul className="space-y-3 text-xs text-slate-600">
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">6. Programme Coordinator</strong>
-                      Supports programme planning, scheduling, team coordination and execution.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">7. WhatsApp Community Manager</strong>
-                      Welcomes members, shares approved updates, and moderates discussions.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">8. Community Engagement Intern</strong>
-                      Supports outreach, member engagement and community growth.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">9. Research & Documentation</strong>
-                      Researches relevant topics and documents programme activities and outcomes.
-                    </li>
-                  </ul>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPrimaryRole("Programme Coordinator");
-                    scrollToForm();
-                  }}
-                  className="w-full py-3 bg-slate-100 hover:bg-[#0E3A2F] hover:text-white text-slate-800 text-xs font-extrabold uppercase tracking-wider rounded-xl cursor-pointer transition-all"
-                >
-                  Apply for Programme Roles &darr;
-                </button>
-              </div>
 
-              {/* Events and Operations */}
-              <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col justify-between space-y-5">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-[#0E3A2F]/10 text-[#0E3A2F] rounded-xl">
-                      <HeartHandshake size={20} />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-sm sm:text-base text-slate-900 uppercase tracking-wide">Events & Operations</h3>
-                      <span className="text-[10px] text-slate-400 font-mono">5 Open Positions</span>
-                    </div>
-                  </div>
-                  <ul className="space-y-3 text-xs text-slate-600">
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">10. Public Speaker / Event Host</strong>
-                      Hosts events, introduces speakers and engages audiences.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">11. Event Moderator</strong>
-                      Facilitates discussions, manages Q&A sessions and maintains conversations.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">12. Event Support Intern</strong>
-                      Assists with event planning, registration, logistics and coordination.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">13. Outreach & Partnership Intern</strong>
-                      Identifies potential collaborators and supports partnership development.
-                    </li>
-                    <li className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <strong className="block text-slate-900 text-xs font-bold">14. Administrative / Operations</strong>
-                      Assists with scheduling, records and internal coordination.
-                    </li>
-                  </ul>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDepartment(dept.name);
+                      setPrimaryRole(dept.positions[0]);
+                      scrollToForm();
+                    }}
+                    className="w-full py-3 bg-slate-100 hover:bg-[#0E3A2F] hover:text-white text-slate-800 text-xs font-extrabold uppercase tracking-wider rounded-xl cursor-pointer transition-all"
+                  >
+                    Apply to {dept.name} &darr;
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPrimaryRole("Event Support Intern");
-                    scrollToForm();
-                  }}
-                  className="w-full py-3 bg-slate-100 hover:bg-[#0E3A2F] hover:text-white text-slate-800 text-xs font-extrabold uppercase tracking-wider rounded-xl cursor-pointer transition-all"
-                >
-                  Apply for Event Roles &darr;
-                </button>
-              </div>
+              ))}
             </div>
           </div>
 
@@ -1153,14 +1096,14 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] font-black uppercase text-[#0E3A2F] font-mono tracking-widest bg-[#FAF8F3] border border-[#0E3A2F]/10 px-3 py-1.5 rounded-full">
-                        📝 Official Internship Application
+                        📝 Official Internship &amp; Volunteer Application
                       </span>
                     </div>
                     <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 uppercase tracking-tight">
-                      Internship Intake Form
+                      Internship &amp; Volunteer Intake Form
                     </h3>
                     <p className="text-xs sm:text-sm text-slate-600">
-                      Complete the official application form below to join the Right-Minds Africa Hub internship team.
+                      Complete the official application form below to join one of the 6 Main Departments at Right-Minds Africa Hub.
                     </p>
                   </div>
                 </div>
@@ -1277,59 +1220,150 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                     </div>
                   </div>
 
-                  {/* SECTION B */}
+                  {/* SECTION B — DEPARTMENT & SPECIALISED POSITION SELECTION */}
                   <div className="space-y-6 pt-4 border-t border-slate-100">
                     <div className="flex items-center gap-2.5 border-b border-slate-100 pb-2">
                       <span className="w-6 h-6 rounded-full bg-[#0E3A2F] text-white text-xs font-black flex items-center justify-center">
                         B
                       </span>
                       <h4 className="font-extrabold text-sm sm:text-base text-slate-900 uppercase tracking-wide">
-                        Section B — Internship Interests
+                        Section B — Main Department &amp; Specialised Position
                       </h4>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                      <div className="space-y-1.5" data-error-field="primaryRole">
-                        <label className="text-2xs font-black uppercase tracking-wider text-slate-600">
-                          6. Primary Internship Role <span className="text-rose-500">*</span>
+                    {/* Step 1: Select 1 of the 6 Main Departments */}
+                    <div className="space-y-3" data-error-field="department">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <label className="text-2xs font-black uppercase tracking-wider text-slate-700">
+                          6. Step 1: Select Your Main Department (6 RMA Main Departments) <span className="text-rose-500">*</span>
                         </label>
-                        <select
-                          value={primaryRole}
-                          onChange={(e) => setPrimaryRole(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs bg-white text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-[#0E3A2F]"
-                        >
-                          {VOLUNTEER_ROLES.map((cat) => (
-                            <optgroup key={cat.category} label={cat.category}>
-                              {cat.roles.map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                        <span className="text-[11px] font-bold text-[#0E3A2F]">
+                          Selected: {selectedDepartment}
+                        </span>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <label className="text-2xs font-black uppercase tracking-wider text-slate-600">
-                          7. Secondary Internship Role (Optional)
-                        </label>
-                        <select
-                          value={secondaryRole}
-                          onChange={(e) => setSecondaryRole(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs bg-white text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-[#0E3A2F]"
-                        >
-                          <option value="">None / Open to Primary Choice Only</option>
-                          {VOLUNTEER_ROLES.map((cat) => (
-                            <optgroup key={cat.category} label={cat.category}>
-                              {cat.roles.map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        {RMA_MAIN_DEPARTMENTS.map((dept, idx) => {
+                          const isSelected = selectedDepartment === dept.name;
+                          return (
+                            <button
+                              key={dept.name}
+                              type="button"
+                              onClick={() => handleSelectDepartmentChange(dept.name)}
+                              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start justify-between gap-2 ${
+                                isSelected
+                                  ? "bg-[#0E3A2F] text-white border-[#0E3A2F] shadow-sm"
+                                  : "bg-slate-50/80 text-slate-800 border-slate-200 hover:bg-white hover:border-[#0E3A2F]/40"
+                              }`}
+                            >
+                              <div>
+                                <span
+                                  className={`text-[10px] font-mono uppercase tracking-widest block ${
+                                    isSelected ? "text-amber-300" : "text-slate-400"
+                                  }`}
+                                >
+                                  Department {idx + 1}
+                                </span>
+                                <span className="font-extrabold text-xs uppercase leading-snug block mt-0.5">
+                                  {dept.name}
+                                </span>
+                                <span
+                                  className={`text-[10px] block mt-1 ${
+                                    isSelected ? "text-emerald-100" : "text-slate-500"
+                                  }`}
+                                >
+                                  {dept.positions.length} specialised positions
+                                </span>
+                              </div>
+                              <div
+                                className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                                  isSelected
+                                    ? "bg-amber-400 text-slate-950"
+                                    : "bg-white border border-slate-300 text-transparent"
+                                }`}
+                              >
+                                <Check size={12} className="stroke-[3]" />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Step 2: Select Preferred Position within the Selected Main Department */}
+                    <div className="p-5 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-4" data-error-field="primaryRole">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <label className="text-2xs font-black uppercase tracking-wider text-slate-800 block">
+                            7. Step 2: Select Your Preferred Position in {selectedDepartment} <span className="text-rose-500">*</span>
+                          </label>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Choose the specific specialisation or position you are applying for within{" "}
+                            <strong className="text-slate-700">{selectedDepartment}</strong>:
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {departmentPositions.map((pos) => {
+                          const isSelected = primaryRole === pos;
+                          return (
+                            <button
+                              key={pos}
+                              type="button"
+                              onClick={() => setPrimaryRole(pos)}
+                              className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                                isSelected
+                                  ? "bg-amber-500 text-slate-950 border-amber-500 shadow-xs"
+                                  : "bg-white text-slate-700 border-slate-200 hover:border-[#0E3A2F]/40"
+                              }`}
+                            >
+                              <span>{pos}</span>
+                              {isSelected && <Check size={13} className="stroke-[3]" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-200/70">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Selected Position ({selectedDepartment})
+                          </label>
+                          <select
+                            value={primaryRole}
+                            onChange={(e) => setPrimaryRole(e.target.value)}
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs bg-white text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-[#0E3A2F]"
+                          >
+                            {departmentPositions.map((pos) => (
+                              <option key={pos} value={pos}>
+                                {pos}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Secondary Position Choice (Optional)
+                          </label>
+                          <select
+                            value={secondaryRole}
+                            onChange={(e) => setSecondaryRole(e.target.value)}
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs bg-white text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-[#0E3A2F]"
+                          >
+                            <option value="">None / Open to Primary Position Only</option>
+                            {RMA_MAIN_DEPARTMENTS.map((dept) => (
+                              <optgroup key={dept.name} label={dept.name}>
+                                {dept.positions.map((pos) => (
+                                  <option key={`${dept.name}-${pos}`} value={pos}>
+                                    {pos} ({dept.name})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     </div>
 
@@ -1337,7 +1371,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                       <label className="text-2xs font-black uppercase tracking-wider text-slate-600 block">
                         8. Relevant Skills (Select all that apply) <span className="text-rose-500">*</span>
                       </label>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                         {SKILL_OPTIONS.map((skill) => {
                           const isSelected = selectedSkills.includes(skill);
                           return (
@@ -1520,7 +1554,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                   Final Step: Get Your Confirmation Mail &amp; Join WhatsApp
                 </h3>
                 <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-                  Enter your name and email below so our automated system immediately sends your <strong>Official Application Confirmation Mail</strong> and opens our <strong>Official WhatsApp Community</strong>.
+                  Enter your name, email, main department and position below so our automated system immediately sends your <strong>Official Application Confirmation Mail</strong> and opens our <strong>Official WhatsApp Community</strong>.
                 </p>
               </div>
 
@@ -1580,7 +1614,7 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
                       Phone / WhatsApp Number
@@ -1595,16 +1629,39 @@ export default function VolunteerApplicationPage({ onNavigate }: VolunteerApplic
                   </div>
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
-                      Primary Role Selected
+                      Main Department
+                    </label>
+                    <select
+                      value={gfDepartment}
+                      onChange={(e) => {
+                        const nextDept = e.target.value;
+                        setGfDepartment(nextDept);
+                        const positions = getPositionsForDepartment(nextDept);
+                        if (positions.length > 0) {
+                          setGfRole(positions[0]);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      {RMA_MAIN_DEPARTMENTS.map((dept) => (
+                        <option key={dept.name} value={dept.name}>
+                          {dept.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-emerald-100 mb-1">
+                      Preferred Position
                     </label>
                     <select
                       value={gfRole}
                       onChange={(e) => setGfRole(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400"
                     >
-                      {VOLUNTEER_ROLES.flatMap(g => g.roles).map(role => (
-                        <option key={role.id} value={role.label}>
-                          {role.label}
+                      {gfDepartmentPositions.map((pos) => (
+                        <option key={pos} value={pos}>
+                          {pos}
                         </option>
                       ))}
                     </select>

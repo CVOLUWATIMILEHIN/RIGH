@@ -188,6 +188,11 @@ export default function Footer({ onOpenJoin, onViewAdmin, onViewTeam, onViewAbou
                 </button>
               </li>
               <li>
+                <a href="/volunteers" className="hover:text-brand-orange transition-colors cursor-pointer text-left block font-medium">
+                  &bull; Volunteers
+                </a>
+              </li>
+              <li>
                 <button onClick={onViewFaqs} className="text-brand-orange hover:text-brand-orange/80 font-bold transition-colors cursor-pointer text-left block uppercase text-[10px] tracking-wider mt-1">
                   &bull; FAQs (RMA & CII)
                 </button>

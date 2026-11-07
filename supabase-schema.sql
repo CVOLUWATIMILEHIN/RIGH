@@ -147,6 +147,53 @@ CREATE TABLE IF NOT EXISTS public.announcements (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- TABLE: volunteers (Onboarded Right-Minds Africa volunteers & directory profiles)
+-- Organised into the 6 Main RMA Departments, storing main department separately from specific position/role.
+CREATE TABLE IF NOT EXISTS public.volunteers (
+    id TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    role TEXT NOT NULL,
+    position TEXT,
+    department TEXT DEFAULT 'CREATIVES',
+    departments TEXT[] DEFAULT ARRAY[]::TEXT[],
+    biography TEXT NOT NULL,
+    expertise TEXT[] DEFAULT ARRAY[]::TEXT[],
+    photo_url TEXT NOT NULL,
+    photo_path TEXT,
+    linkedin_url TEXT,
+    email TEXT, -- Private administrator record only; never exposed on public website
+    date_onboarded TEXT,
+    status TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft', 'Published', 'Archived')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.volunteers ADD COLUMN IF NOT EXISTS position TEXT;
+ALTER TABLE public.volunteers ADD COLUMN IF NOT EXISTS departments TEXT[] DEFAULT ARRAY[]::TEXT[];
+
+-- Public-safe view that explicitly excludes private email addresses and non-published records
+CREATE OR REPLACE VIEW public.public_volunteers AS
+SELECT
+    id,
+    full_name,
+    slug,
+    role,
+    COALESCE(position, role) AS position,
+    department,
+    departments,
+    biography,
+    expertise,
+    photo_url,
+    photo_path,
+    linkedin_url,
+    date_onboarded,
+    status,
+    created_at,
+    updated_at
+FROM public.volunteers
+WHERE status = 'Published';
+
 -- ==============================================================================
 -- 3. AUTO-UPDATE TRIGGERS
 -- ==============================================================================
@@ -177,6 +224,9 @@ CREATE TRIGGER trigger_testimonials_updated_at BEFORE UPDATE ON public.testimoni
 DROP TRIGGER IF EXISTS trigger_announcements_updated_at ON public.announcements;
 CREATE TRIGGER trigger_announcements_updated_at BEFORE UPDATE ON public.announcements FOR EACH ROW EXECUTE FUNCTION set_updated_at_column();
 
+DROP TRIGGER IF EXISTS trigger_volunteers_updated_at ON public.volunteers;
+CREATE TRIGGER trigger_volunteers_updated_at BEFORE UPDATE ON public.volunteers FOR EACH ROW EXECUTE FUNCTION set_updated_at_column();
+
 -- ==============================================================================
 -- 4. ROW LEVEL SECURITY (RLS) POLICIES
 -- Anyone (anon public visitor) can read (SELECT).
@@ -193,6 +243,7 @@ ALTER TABLE public.blog_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gallery ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.testimonials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.volunteers ENABLE ROW LEVEL SECURITY;
 
 -- Clean existing policies if re-running
 DROP POLICY IF EXISTS "Public can view site_settings" ON public.site_settings;
@@ -239,6 +290,12 @@ DROP POLICY IF EXISTS "Public can view announcements" ON public.announcements;
 DROP POLICY IF EXISTS "Authenticated admins can insert announcements" ON public.announcements;
 DROP POLICY IF EXISTS "Authenticated admins can update announcements" ON public.announcements;
 DROP POLICY IF EXISTS "Authenticated admins can delete announcements" ON public.announcements;
+
+DROP POLICY IF EXISTS "Public can view published volunteers" ON public.volunteers;
+DROP POLICY IF EXISTS "Authenticated admins can view all volunteers" ON public.volunteers;
+DROP POLICY IF EXISTS "Authenticated admins can insert volunteers" ON public.volunteers;
+DROP POLICY IF EXISTS "Authenticated admins can update volunteers" ON public.volunteers;
+DROP POLICY IF EXISTS "Authenticated admins can delete volunteers" ON public.volunteers;
 
 -- site_settings
 CREATE POLICY "Public can view site_settings" ON public.site_settings FOR SELECT USING (true);
@@ -294,6 +351,13 @@ CREATE POLICY "Authenticated admins can insert announcements" ON public.announce
 CREATE POLICY "Authenticated admins can update announcements" ON public.announcements FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated admins can delete announcements" ON public.announcements FOR DELETE TO authenticated USING (true);
 
+-- volunteers (Public visitors can ONLY read Published records; Authenticated admins have full CRUD)
+CREATE POLICY "Public can view published volunteers" ON public.volunteers FOR SELECT USING (status = 'Published');
+CREATE POLICY "Authenticated admins can view all volunteers" ON public.volunteers FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert volunteers" ON public.volunteers FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update volunteers" ON public.volunteers FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete volunteers" ON public.volunteers FOR DELETE TO authenticated USING (true);
+
 -- ==============================================================================
 -- 5. SUPABASE STORAGE BUCKET: cms-media
 -- Creates public bucket for images and configures public access
@@ -344,6 +408,7 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.gallery;
     ALTER PUBLICATION supabase_realtime ADD TABLE public.testimonials;
     ALTER PUBLICATION supabase_realtime ADD TABLE public.announcements;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.volunteers;
 EXCEPTION
     WHEN duplicate_object THEN
         -- Table already in publication, ignore

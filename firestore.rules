@@ -245,6 +245,12 @@ service cloud.firestore {
       allow list: if true;
       allow create, update, delete: if isValidId(docId);
     }
+
+    match /volunteers/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update, delete: if isValidId(docId);
+    }
   }
 }
 
