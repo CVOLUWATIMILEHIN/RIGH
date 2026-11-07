@@ -6069,126 +6069,252 @@ export interface VolunteerProfile {
 }
 
 const VOLUNTEERS_CACHE_KEY = "rma_volunteers_directory_v1";
+const VOLUNTEERS_MIGRATED_KEY = "rma_volunteers_cloud_migrated_v2";
 
 function sanitizePublicVolunteer(v: VolunteerProfile): VolunteerProfile {
   const { email, ...publicFields } = v;
   return publicFields;
 }
 
+function normalizeVolunteerObject(
+  raw: any,
+  parseVolunteerDepartments: (dept?: string, depts?: string[]) => string[],
+  formatVolunteerDepartmentsString: (depts: string[]) => string,
+  normalizeVolunteerPositionName: (pos?: string, dept?: string) => string,
+  defaultDept: string
+): VolunteerProfile {
+  const depts = parseVolunteerDepartments(raw.department, raw.departments);
+  const deptStr =
+    depts.length > 0 ? formatVolunteerDepartmentsString(depts) : defaultDept;
+  const pos = normalizeVolunteerPositionName(
+    raw.position || raw.role,
+    raw.department
+  );
+  const nowIso = new Date().toISOString();
+
+  return {
+    id: raw.id,
+    full_name: (raw.full_name || "").trim(),
+    slug:
+      raw.slug ||
+      `${(raw.full_name || "volunteer")
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")}-${String(raw.id || "").slice(-4)}`,
+    role: pos,
+    position: pos,
+    department: deptStr,
+    departments: depts.length > 0 ? depts : [deptStr],
+    biography: raw.biography || "",
+    expertise: Array.isArray(raw.expertise)
+      ? raw.expertise
+      : typeof raw.expertise === "string" && raw.expertise.trim()
+      ? raw.expertise
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : [],
+    photo_url: raw.photo_url || "",
+    photo_path: raw.photo_path || "",
+    linkedin_url: raw.linkedin_url || "",
+    email: raw.email || "",
+    date_onboarded:
+      raw.date_onboarded ||
+      (raw.created_at ? String(raw.created_at).slice(0, 10) : nowIso.slice(0, 10)),
+    status: (raw.status as VolunteerStatus) || "Draft",
+    created_at: raw.created_at || nowIso,
+    updated_at: raw.updated_at || nowIso
+  };
+}
+
 /**
  * Retrieve all volunteer records for CMS Administrators (includes Draft, Published, Archived, and private email).
- * Syncs across Supabase (`volunteers` table) and Firestore (`volunteers` collection) so records persist across refreshes.
+ * Uses live cloud storage (Supabase `volunteers` table + `/api/volunteers` + Cloud Firestore) as the authoritative
+ * source of truth so all computers see the exact same records.
  */
 export async function getVolunteers(): Promise<VolunteerProfile[]> {
-  let list: VolunteerProfile[] = [];
   const {
     parseVolunteerDepartments,
     formatVolunteerDepartmentsString,
     normalizeVolunteerPositionName,
-    RMA_VOLUNTEER_DEPARTMENTS
+    RMA_VOLUNTEER_DEPARTMENTS,
+    fetchVolunteersFromSupabase,
+    saveVolunteerToSupabase
   } = await import("./supabaseCms");
+  const { configureRuntimeSupabase, isSupabaseConfigured } = await import("./supabase");
 
+  const defaultDept = RMA_VOLUNTEER_DEPARTMENTS[0];
+
+  // One-time migration: if Computer A had previously saved volunteers only in localStorage before the cloud fix,
+  // push those records to the cloud so they are never lost and immediately appear on Computer B.
   if (typeof window !== "undefined") {
+    try {
+      const alreadyMigrated = localStorage.getItem(VOLUNTEERS_MIGRATED_KEY) === "true";
+      const cachedRaw = localStorage.getItem(VOLUNTEERS_CACHE_KEY);
+      if (!alreadyMigrated && cachedRaw) {
+        const parsedLocal = JSON.parse(cachedRaw);
+        if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
+          localStorage.setItem(VOLUNTEERS_MIGRATED_KEY, "true");
+          for (const item of parsedLocal) {
+            if (item && item.id && item.full_name) {
+              const norm = normalizeVolunteerObject(
+                item,
+                parseVolunteerDepartments,
+                formatVolunteerDepartmentsString,
+                normalizeVolunteerPositionName,
+                defaultDept
+              );
+              fetch("/api/volunteers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ volunteer: norm })
+              }).catch(() => null);
+            }
+          }
+        } else {
+          localStorage.setItem(VOLUNTEERS_MIGRATED_KEY, "true");
+        }
+      }
+    } catch {}
+  }
+
+  const mergedMap = new Map<string, VolunteerProfile>();
+  const deletedIds = new Set<string>();
+  const supabaseIds = new Set<string>();
+  let anyCloudSourceSucceeded = false;
+
+  // 1. Fetch from Server API `/api/volunteers` (queries both Supabase & Cloud Firestore on server and discovers runtime Supabase config)
+  try {
+    const apiRes = await fetch("/api/volunteers", {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store"
+    });
+    if (apiRes.ok) {
+      const apiData = await apiRes.json();
+      if (apiData?.supabaseUrl && apiData?.supabaseAnonKey) {
+        configureRuntimeSupabase(apiData.supabaseUrl, apiData.supabaseAnonKey);
+      }
+      if (Array.isArray(apiData?.volunteers)) {
+        if (apiData.sources?.supabase || apiData.sources?.firestore) {
+          anyCloudSourceSucceeded = true;
+        }
+        for (const item of apiData.volunteers) {
+          if (item && item.id && !item._deleted) {
+            const norm = normalizeVolunteerObject(
+              item,
+              parseVolunteerDepartments,
+              formatVolunteerDepartmentsString,
+              normalizeVolunteerPositionName,
+              defaultDept
+            );
+            mergedMap.set(norm.id, norm);
+          }
+        }
+      }
+    }
+  } catch (apiErr) {
+    console.warn("Server /api/volunteers fetch skipped:", apiErr);
+  }
+
+  // 2. Fetch directly from Supabase `volunteers` table
+  try {
+    const supaRes = await fetchVolunteersFromSupabase({ publicOnly: false });
+    if (supaRes.data) {
+      anyCloudSourceSucceeded = true;
+      for (const item of supaRes.data) {
+        supabaseIds.add(item.id);
+        const norm = normalizeVolunteerObject(
+          item,
+          parseVolunteerDepartments,
+          formatVolunteerDepartmentsString,
+          normalizeVolunteerPositionName,
+          defaultDept
+        );
+        const existing = mergedMap.get(norm.id);
+        if (
+          !existing ||
+          new Date(norm.updated_at).getTime() >=
+            new Date(existing.updated_at || 0).getTime()
+        ) {
+          mergedMap.set(norm.id, norm);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("Supabase volunteers direct fetch warning:", e);
+  }
+
+  // 3. Fetch directly from Cloud Firestore `volunteers` collection (`rightmind-african-hub`)
+  try {
+    const { collection, getDocs } = await import("firebase/firestore");
+    const db = await getFirestoreDb();
+    const querySnapshot = await getDocs(collection(db, "volunteers"));
+    anyCloudSourceSucceeded = true;
+
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data() as any;
+      if (!data) return;
+      if (data._deleted) {
+        deletedIds.add(docSnap.id);
+        mergedMap.delete(docSnap.id);
+        return;
+      }
+      const norm = normalizeVolunteerObject(
+        { ...data, id: data.id || docSnap.id },
+        parseVolunteerDepartments,
+        formatVolunteerDepartmentsString,
+        normalizeVolunteerPositionName,
+        defaultDept
+      );
+      const existing = mergedMap.get(norm.id);
+      if (
+        !existing ||
+        new Date(norm.updated_at).getTime() >=
+          new Date(existing.updated_at || 0).getTime()
+      ) {
+        mergedMap.set(norm.id, norm);
+      }
+    });
+  } catch (err) {
+    console.warn("Firestore volunteers fetch warning:", err);
+  }
+
+  // Ensure any deleted IDs are removed
+  deletedIds.forEach((id) => mergedMap.delete(id));
+
+  let list = Array.from(mergedMap.values());
+
+  // If Supabase is configured and some cloud records exist in Firestore that aren't in Supabase yet,
+  // automatically backfill them into Supabase in the background so Supabase is 100% complete!
+  if (isSupabaseConfigured && list.length > 0) {
+    for (const v of list) {
+      if (!supabaseIds.has(v.id)) {
+        saveVolunteerToSupabase(v).catch(() => null);
+      }
+    }
+  }
+
+  // Only fall back to localStorage if the device is completely offline and NO cloud source responded
+  if (!anyCloudSourceSucceeded && list.length === 0 && typeof window !== "undefined") {
     try {
       const cached = localStorage.getItem(VOLUNTEERS_CACHE_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
-          list = parsed.map((item: any) => {
-            const depts = parseVolunteerDepartments(item.department, item.departments);
-            const deptStr =
-              depts.length > 0
-                ? formatVolunteerDepartmentsString(depts)
-                : RMA_VOLUNTEER_DEPARTMENTS[0];
-            const pos = normalizeVolunteerPositionName(
-              item.position || item.role,
-              item.department
-            );
-            return {
-              ...item,
-              role: pos,
-              position: pos,
-              department: deptStr,
-              departments: depts.length > 0 ? depts : [deptStr]
-            };
-          });
+          list = parsed.map((item: any) =>
+            normalizeVolunteerObject(
+              item,
+              parseVolunteerDepartments,
+              formatVolunteerDepartmentsString,
+              normalizeVolunteerPositionName,
+              defaultDept
+            )
+          );
         }
       }
-    } catch (e) {}
-  }
-
-  // 1. Try Supabase primary table if configured
-  try {
-    const { fetchVolunteersFromSupabase } = await import("./supabaseCms");
-    const supaRes = await fetchVolunteersFromSupabase({ publicOnly: false });
-    if (supaRes.data && supaRes.data.length > 0) {
-      const mergedMap = new Map<string, VolunteerProfile>();
-      for (const item of list) mergedMap.set(item.id, item);
-      for (const item of supaRes.data) mergedMap.set(item.id, item);
-      list = Array.from(mergedMap.values());
-    }
-  } catch (e) {
-    console.warn("Supabase volunteers fetch skipped or pending:", e);
-  }
-
-  // 2. Sync with Firestore `volunteers` collection
-  try {
-    const { collection, getDocs } = await import("firebase/firestore");
-    const db = await getFirestoreDb();
-    const querySnapshot = await getDocs(collection(db, "volunteers"));
-    const fbList: VolunteerProfile[] = [];
-    querySnapshot.forEach((docSnap) => {
-      const data = docSnap.data() as any;
-      if (data && !data._deleted) {
-        const depts = parseVolunteerDepartments(data.department, data.departments);
-        const deptStr =
-          depts.length > 0
-            ? formatVolunteerDepartmentsString(depts)
-            : RMA_VOLUNTEER_DEPARTMENTS[0];
-        const pos = normalizeVolunteerPositionName(
-          data.position || data.role,
-          data.department
-        );
-
-        fbList.push({
-          id: docSnap.id,
-          full_name: data.full_name || "",
-          slug: data.slug || docSnap.id,
-          role: pos,
-          position: pos,
-          department: deptStr,
-          departments: depts.length > 0 ? depts : [deptStr],
-          biography: data.biography || "",
-          expertise: Array.isArray(data.expertise)
-            ? data.expertise
-            : typeof data.expertise === "string" && data.expertise.trim()
-            ? data.expertise.split(",").map((s: string) => s.trim()).filter(Boolean)
-            : [],
-          photo_url: data.photo_url || "",
-          photo_path: data.photo_path || "",
-          linkedin_url: data.linkedin_url || "",
-          email: data.email || "",
-          date_onboarded: data.date_onboarded || new Date().toISOString().slice(0, 10),
-          status: (data.status as VolunteerStatus) || "Draft",
-          created_at: data.created_at || new Date().toISOString(),
-          updated_at: data.updated_at || new Date().toISOString()
-        });
-      }
-    });
-
-    if (fbList.length > 0 || list.length === 0) {
-      const mergedMap = new Map<string, VolunteerProfile>();
-      for (const item of list) mergedMap.set(item.id, item);
-      for (const item of fbList) {
-        const existing = mergedMap.get(item.id);
-        if (!existing || new Date(item.updated_at).getTime() >= new Date(existing.updated_at || 0).getTime()) {
-          mergedMap.set(item.id, item);
-        }
-      }
-      list = Array.from(mergedMap.values());
-    }
-  } catch (err) {
-    console.warn("Firestore volunteers fetch fallback:", err);
+    } catch {}
   }
 
   // Sort newest onboarded / updated first
@@ -6198,10 +6324,11 @@ export async function getVolunteers(): Promise<VolunteerProfile[]> {
     return dateB - dateA;
   });
 
-  if (typeof window !== "undefined") {
+  // Update local cache to match the authoritative cloud list
+  if (typeof window !== "undefined" && anyCloudSourceSucceeded) {
     try {
       localStorage.setItem(VOLUNTEERS_CACHE_KEY, JSON.stringify(list));
-    } catch (e) {}
+    } catch {}
   }
 
   return list;
@@ -6212,21 +6339,6 @@ export async function getVolunteers(): Promise<VolunteerProfile[]> {
  * Explicitly strips private `email` addresses and excludes `Draft` and `Archived` profiles.
  */
 export async function getPublishedVolunteers(): Promise<VolunteerProfile[]> {
-  try {
-    const { fetchVolunteersFromSupabase } = await import("./supabaseCms");
-    const supaPublic = await fetchVolunteersFromSupabase({ publicOnly: true });
-    if (supaPublic.data && supaPublic.data.length > 0) {
-      const all = await getVolunteers();
-      const publishedAll = all
-        .filter((v) => v.status === "Published")
-        .map(sanitizePublicVolunteer);
-      if (publishedAll.length >= supaPublic.data.length) {
-        return publishedAll;
-      }
-      return supaPublic.data.map(sanitizePublicVolunteer);
-    }
-  } catch (e) {}
-
   const all = await getVolunteers();
   return all
     .filter((v) => v.status === "Published")
@@ -6234,16 +6346,22 @@ export async function getPublishedVolunteers(): Promise<VolunteerProfile[]> {
 }
 
 /**
- * Create or update a volunteer record in Supabase and Firestore.
+ * Create or update a volunteer record in Supabase, `/api/volunteers`, and Cloud Firestore.
  */
 export async function saveVolunteer(
   volunteer: VolunteerProfile
-): Promise<{ success: boolean; supabaseSynced: boolean; error: string | null }> {
+): Promise<{
+  success: boolean;
+  supabaseSynced: boolean;
+  firestoreSynced: boolean;
+  error: string | null;
+}> {
   const {
     parseVolunteerDepartments,
     formatVolunteerDepartmentsString,
     normalizeVolunteerPositionName,
-    RMA_VOLUNTEER_DEPARTMENTS
+    RMA_VOLUNTEER_DEPARTMENTS,
+    saveVolunteerToSupabase
   } = await import("./supabaseCms");
 
   const nowIso = new Date().toISOString();
@@ -6285,60 +6403,84 @@ export async function saveVolunteer(
     updated_at: nowIso
   };
 
-  if (typeof window !== "undefined") {
-    try {
-      const cached = localStorage.getItem(VOLUNTEERS_CACHE_KEY);
-      let list: VolunteerProfile[] = cached ? JSON.parse(cached) : [];
-      list = list.filter((v) => v.id !== normalized.id);
-      list.unshift(normalized);
-      localStorage.setItem(VOLUNTEERS_CACHE_KEY, JSON.stringify(list));
-      window.dispatchEvent(new Event("rma_volunteers_updated"));
-    } catch (e) {}
-  }
-
   let supabaseSynced = false;
+  let firestoreSynced = false;
   let supabaseError: string | null = null;
 
-  // 1. Save to Supabase `volunteers` table
+  // 1. Save directly to Supabase `volunteers` table from client if configured
   try {
-    const { saveVolunteerToSupabase } = await import("./supabaseCms");
     const supaRes = await saveVolunteerToSupabase(normalized);
-    supabaseSynced = supaRes.success;
-    if (!supaRes.success && supaRes.error) {
+    if (supaRes.success) {
+      supabaseSynced = true;
+    } else if (supaRes.error && !supaRes.error.includes("not set in environment")) {
       supabaseError = supaRes.error;
     }
   } catch (e: any) {
     supabaseError = e?.message || null;
   }
 
-  // 2. Save to Firestore `volunteers` collection for guaranteed cross-refresh cloud persistence
+  // 2. Save via Server API `/api/volunteers` (persists to both Supabase using server keys & Cloud Firestore)
+  try {
+    const apiRes = await fetch("/api/volunteers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ volunteer: normalized })
+    });
+    if (apiRes.ok) {
+      const apiData = await apiRes.json();
+      if (apiData.supabaseSynced) {
+        supabaseSynced = true;
+        supabaseError = null;
+      } else if (apiData.supabaseError && !supabaseSynced) {
+        supabaseError = apiData.supabaseError;
+      }
+      if (apiData.firestoreSynced) {
+        firestoreSynced = true;
+      }
+    }
+  } catch (apiErr) {
+    console.warn("Server /api/volunteers POST fallback:", apiErr);
+  }
+
+  // 3. Save directly to Cloud Firestore `volunteers` collection (`rightmind-african-hub`)
   try {
     const { doc, setDoc } = await import("firebase/firestore");
     const db = await getFirestoreDb();
-    await setDoc(doc(db, "volunteers", normalized.id), normalized);
+    await setDoc(doc(db, "volunteers", normalized.id), {
+      ...normalized,
+      _deleted: false
+    });
+    firestoreSynced = true;
   } catch (err) {
-    console.warn("Firestore volunteer write queued:", err);
-    queueWrite({
-      type: "set",
-      collection: "volunteers",
-      docId: normalized.id,
-      data: normalized
-    }).catch(() => null);
+    console.warn("Firestore volunteer write warning:", err);
   }
 
-  if (typeof window !== "undefined") {
+  // Update local cache only after cloud save completes
+  if (typeof window !== "undefined" && (supabaseSynced || firestoreSynced)) {
+    try {
+      const cached = localStorage.getItem(VOLUNTEERS_CACHE_KEY);
+      let list: VolunteerProfile[] = cached ? JSON.parse(cached) : [];
+      list = list.filter((v) => v.id !== normalized.id);
+      list.unshift(normalized);
+      localStorage.setItem(VOLUNTEERS_CACHE_KEY, JSON.stringify(list));
+    } catch {}
     window.dispatchEvent(new Event("rma_volunteers_updated"));
   }
 
+  const cloudSuccess = supabaseSynced || firestoreSynced;
+
   return {
-    success: true,
+    success: cloudSuccess,
     supabaseSynced,
-    error: supabaseError
+    firestoreSynced,
+    error: !cloudSuccess
+      ? supabaseError || "Could not save volunteer to cloud database. Please check your network connection."
+      : supabaseError
   };
 }
 
 /**
- * Permanently delete a volunteer record from Supabase and Firestore.
+ * Permanently delete a volunteer record from Supabase, `/api/volunteers`, and Cloud Firestore.
  */
 export async function deleteVolunteer(
   id: string,
@@ -6351,22 +6493,33 @@ export async function deleteVolunteer(
         let list: VolunteerProfile[] = JSON.parse(cached);
         list = list.filter((v) => v.id !== id);
         localStorage.setItem(VOLUNTEERS_CACHE_KEY, JSON.stringify(list));
-        window.dispatchEvent(new Event("rma_volunteers_updated"));
       }
-    } catch (e) {}
+    } catch {}
   }
 
   let supabaseErr: string | null = null;
+
+  // 1. Delete from Supabase directly
   try {
     const { deleteVolunteerFromSupabase } = await import("./supabaseCms");
     const res = await deleteVolunteerFromSupabase(id, photoPath);
-    if (!res.success && res.error) {
+    if (!res.success && res.error && !res.error.includes("not set in environment")) {
       supabaseErr = res.error;
     }
   } catch (e: any) {
     supabaseErr = e?.message || null;
   }
 
+  // 2. Delete via Server API `/api/volunteers`
+  try {
+    await fetch(`/api/volunteers?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, photoPath })
+    });
+  } catch {}
+
+  // 3. Delete from Cloud Firestore `volunteers` collection
   try {
     const { doc, deleteDoc } = await import("firebase/firestore");
     const db = await getFirestoreDb();
@@ -6381,6 +6534,7 @@ export async function deleteVolunteer(
 
   return { success: true, error: supabaseErr };
 }
+
 
 
 

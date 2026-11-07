@@ -785,24 +785,30 @@ export default function AdminPortal({ onBack }: AdminPortalProps) {
         throw new Error(serverErrorMsg || "Authentication failed too many times. Access temporarily locked for security.");
       }
 
-      // 2. ATTEMPT SUPABASE AUTH ONLY FOR SUPER ADMIN IF SERVER SESSION DID NOT MATCH
+      // 2. ATTEMPT SUPABASE AUTH (Non-blocking background session when serverSession succeeded, or direct check for Super Admin)
       let supabaseUser: any = null;
-      if (!serverSession && isSuperAdminEmail && supabase && isSupabaseConfigured) {
-        addTerminalLog(`🔐 [SUPABASE AUTH] Authenticating ${cleanEmail} against Supabase GoTrue...`);
-        try {
-          const { data: supaAuthData, error: supaAuthError } = await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password: cleanPass
-          });
+      if (supabase && isSupabaseConfigured) {
+        if (serverSession) {
+          supabase.auth
+            .signInWithPassword({ email: cleanEmail, password: cleanPass })
+            .catch(() => null);
+        } else if (isSuperAdminEmail) {
+          addTerminalLog(`🔐 [SUPABASE AUTH] Authenticating ${cleanEmail} against Supabase GoTrue...`);
+          try {
+            const { data: supaAuthData, error: supaAuthError } = await supabase.auth.signInWithPassword({
+              email: cleanEmail,
+              password: cleanPass
+            });
 
-          if (supaAuthError) {
-            console.warn("Supabase auth check:", supaAuthError.message);
-          } else if (supaAuthData && supaAuthData.user) {
-            supabaseUser = supaAuthData.user;
-            addTerminalLog(`✅ [SUPABASE AUTH] Verified admin session for ${cleanEmail}!`);
+            if (supaAuthError) {
+              console.warn("Supabase auth check:", supaAuthError.message);
+            } else if (supaAuthData && supaAuthData.user) {
+              supabaseUser = supaAuthData.user;
+              addTerminalLog(`✅ [SUPABASE AUTH] Verified admin session for ${cleanEmail}!`);
+            }
+          } catch (supaErr: any) {
+            console.warn("Supabase auth exception:", supaErr);
           }
-        } catch (supaErr: any) {
-          console.warn("Supabase auth exception:", supaErr);
         }
       }
 

@@ -319,6 +319,31 @@
         "adminStatus": { "type": "string" }
       },
       "required": ["id", "whatsappNumber", "whatsappMessage", "whatsappEnabled", "liveChatEnabled", "officeHours", "autoReplyMessage", "chatPosition", "chatTheme", "supportEmail", "adminStatus"]
+    },
+    "Volunteer": {
+      "title": "Volunteer",
+      "description": "Onboarded Right-Minds Africa volunteer profile stored across Supabase and Cloud Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "full_name": { "type": "string" },
+        "slug": { "type": "string" },
+        "role": { "type": "string" },
+        "position": { "type": "string" },
+        "department": { "type": "string" },
+        "departments": { "type": "array", "items": { "type": "string" } },
+        "biography": { "type": "string" },
+        "expertise": { "type": "array", "items": { "type": "string" } },
+        "photo_url": { "type": "string" },
+        "photo_path": { "type": "string" },
+        "linkedin_url": { "type": "string" },
+        "email": { "type": "string" },
+        "date_onboarded": { "type": "string" },
+        "status": { "type": "string", "enum": ["Draft", "Published", "Archived"] },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" }
+      },
+      "required": ["id", "full_name", "slug", "role", "department", "biography", "photo_url", "status"]
     }
   },
   "firestore": {
@@ -397,6 +422,10 @@
     "/notifications/{notifId}": {
       "schema": "Notification",
       "description": "Captured user enrollment notifications and automated alerts"
+    },
+    "/volunteers/{volunteerId}": {
+      "schema": "Volunteer",
+      "description": "Onboarded Right-Minds Africa volunteer profiles"
     }
   }
 }

@@ -2031,6 +2031,21 @@ app.post("/api/email/retry-log", async (req, res) => {
   }
 });
 
+// Unified Volunteer Management & Cross-Device Synchronisation Endpoint (/api/volunteers)
+app.all("/api/volunteers", async (req, res) => {
+  try {
+    // @ts-ignore - Dynamic import of Vercel serverless handler
+    const mod = await import("./api/volunteers.js");
+    if (mod && typeof mod.default === "function") {
+      return await mod.default(req, res);
+    }
+    res.status(500).json({ error: "Volunteers API handler unavailable" });
+  } catch (err: any) {
+    console.error("[/api/volunteers] Server error:", err);
+    res.status(500).json({ error: err?.message || "Failed to execute volunteers endpoint" });
+  }
+});
+
 // Vite server asset routing setup
 async function setupViteServer() {
   // Synchronize email templates in Firestore background if connected

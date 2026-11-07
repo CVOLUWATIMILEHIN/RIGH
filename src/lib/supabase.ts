@@ -1,45 +1,130 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Read Supabase credentials from Vite environment variables or window/fallback
-// Checks both VITE_ prefixed and standard variables for maximum flexibility
-const env = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : ({} as Record<string, string>);
+// Read Supabase credentials from Vite environment variables or window/runtime config
+// Checks VITE_, NEXT_PUBLIC_, and SUPABASE_ prefixes for seamless Vercel & local compatibility
+const env =
+  typeof import.meta !== "undefined" && import.meta.env
+    ? (import.meta.env as Record<string, string>)
+    : ({} as Record<string, string>);
 
-export const SUPABASE_URL: string = 
-  env.VITE_SUPABASE_URL || 
-  env.SUPABASE_URL || 
-  (typeof window !== "undefined" && (window as any).__SUPABASE_URL__) || 
+function isPlaceholderValue(val?: string): boolean {
+  if (!val) return true;
+  const trimmed = val.trim();
+  if (!trimmed) return true;
+  if (
+    trimmed.includes("your-project-id.supabase.co") ||
+    trimmed.includes("your-anon-public-api-key") ||
+    trimmed === "undefined" ||
+    trimmed === "null"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+const rawEnvUrl =
+  env.VITE_SUPABASE_URL ||
+  env.NEXT_PUBLIC_SUPABASE_URL ||
+  env.SUPABASE_URL ||
+  (typeof window !== "undefined" && (window as any).__SUPABASE_URL__) ||
+  (typeof window !== "undefined" && window.localStorage?.getItem("rma_runtime_supabase_url")) ||
   "";
 
-export const SUPABASE_ANON_KEY: string = 
-  env.VITE_SUPABASE_ANON_KEY || 
-  env.SUPABASE_ANON_KEY || 
-  (typeof window !== "undefined" && (window as any).__SUPABASE_ANON_KEY__) || 
+const rawEnvKey =
+  env.VITE_SUPABASE_ANON_KEY ||
+  env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  env.SUPABASE_ANON_KEY ||
+  env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY ||
+  (typeof window !== "undefined" && (window as any).__SUPABASE_ANON_KEY__) ||
+  (typeof window !== "undefined" && window.localStorage?.getItem("rma_runtime_supabase_anon_key")) ||
   "";
 
-export const isSupabaseConfigured = Boolean(
-  SUPABASE_URL && 
-  SUPABASE_URL.trim().length > 0 && 
-  SUPABASE_ANON_KEY && 
-  SUPABASE_ANON_KEY.trim().length > 0 &&
-  SUPABASE_URL.startsWith("http")
+export let SUPABASE_URL: string = isPlaceholderValue(rawEnvUrl) ? "" : rawEnvUrl.trim();
+export let SUPABASE_ANON_KEY: string = isPlaceholderValue(rawEnvKey) ? "" : rawEnvKey.trim();
+
+export let isSupabaseConfigured = Boolean(
+  SUPABASE_URL &&
+    SUPABASE_URL.length > 0 &&
+    SUPABASE_ANON_KEY &&
+    SUPABASE_ANON_KEY.length > 0 &&
+    SUPABASE_URL.startsWith("http")
 );
 
-// Create Supabase singleton client
-export const supabase = isSupabaseConfigured
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        storage: typeof window !== "undefined" ? window.localStorage : undefined
-      },
-      realtime: {
-        params: {
-          eventsPerSecond: 10
-        }
+function buildSupabaseClient(url: string, key: string): SupabaseClient {
+  return createClient(url, key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: typeof window !== "undefined" ? window.localStorage : undefined
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10
       }
-    })
+    }
+  });
+}
+
+// Create Supabase singleton client
+export let supabase: SupabaseClient | null = isSupabaseConfigured
+  ? buildSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+
+export function getSupabaseClient(): SupabaseClient | null {
+  return supabase;
+}
+
+export function isSupabaseActive(): boolean {
+  return Boolean(supabase && isSupabaseConfigured);
+}
+
+export function getSupabaseDiagnostics(): {
+  configured: boolean;
+  projectUrl: string;
+} {
+  return {
+    configured: Boolean(supabase && isSupabaseConfigured),
+    projectUrl: SUPABASE_URL || ""
+  };
+}
+
+/**
+ * Dynamically configures the Supabase client at runtime if public credentials are discovered
+ * from the server (/api/volunteers) or shared cloud settings (`settings/supabase_config`).
+ */
+export function configureRuntimeSupabase(url?: string, anonKey?: string): SupabaseClient | null {
+  const cleanUrl = (url || "").trim();
+  const cleanKey = (anonKey || "").trim();
+  if (
+    isPlaceholderValue(cleanUrl) ||
+    isPlaceholderValue(cleanKey) ||
+    !cleanUrl.startsWith("http")
+  ) {
+    return supabase;
+  }
+
+  if (supabase && SUPABASE_URL === cleanUrl && SUPABASE_ANON_KEY === cleanKey) {
+    return supabase;
+  }
+
+  SUPABASE_URL = cleanUrl;
+  SUPABASE_ANON_KEY = cleanKey;
+  isSupabaseConfigured = true;
+  supabase = buildSupabaseClient(cleanUrl, cleanKey);
+
+  if (typeof window !== "undefined") {
+    try {
+      (window as any).__SUPABASE_URL__ = cleanUrl;
+      (window as any).__SUPABASE_ANON_KEY__ = cleanKey;
+      window.localStorage.setItem("rma_runtime_supabase_url", cleanUrl);
+      window.localStorage.setItem("rma_runtime_supabase_anon_key", cleanKey);
+    } catch {}
+  }
+
+  return supabase;
+}
 
 /**
  * Helper to upload images directly to Supabase Storage in the public bucket 'cms-media'.
@@ -50,15 +135,16 @@ export async function uploadImageToSupabase(
   bucket: string = "cms-media",
   customPath?: string
 ): Promise<{ url: string; error: string | null }> {
-  if (!supabase) {
-    return { url: "", error: "Supabase client is not configured. Please add SUPABASE_URL and SUPABASE_ANON_KEY." };
+  const client = getSupabaseClient();
+  if (!client) {
+    return { url: "", error: "Supabase client is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY." };
   }
 
   try {
     const fileExt = fileOrBlob instanceof File && fileOrBlob.name ? fileOrBlob.name.split(".").pop() : "png";
     const fileName = customPath || `upload_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
 
-    const { data, error } = await supabase.storage
+    const { data, error } = await client.storage
       .from(bucket)
       .upload(fileName, fileOrBlob, {
         cacheControl: "3600",
@@ -69,7 +155,7 @@ export async function uploadImageToSupabase(
       return { url: "", error: error.message };
     }
 
-    const { data: publicUrlData } = supabase.storage
+    const { data: publicUrlData } = client.storage
       .from(bucket)
       .getPublicUrl(data.path);
 
@@ -179,7 +265,7 @@ export async function uploadVolunteerPhotoToSupabase(
 }> {
   try {
     onProgress?.(15, "Validating & optimising image for web...");
-    const { blob, dataUrl, mimeType, ext } = await optimizeImageForWeb(file, 900, 0.84);
+    const { blob, dataUrl, mimeType, ext } = await optimizeImageForWeb(file, 720, 0.80);
     onProgress?.(45, "Image optimised. Preparing upload...");
 
     const safePrefix = (volunteerSlugOrId || "volunteer")
@@ -189,9 +275,10 @@ export async function uploadVolunteerPhotoToSupabase(
       .slice(0, 40);
     const storagePath = `volunteers/${safePrefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
 
-    if (supabase && isSupabaseConfigured) {
+    const client = getSupabaseClient();
+    if (client && isSupabaseConfigured) {
       onProgress?.(70, "Uploading to Supabase Storage (cms-media)...");
-      const { data, error } = await supabase.storage
+      const { data, error } = await client.storage
         .from("cms-media")
         .upload(storagePath, blob, {
           contentType: mimeType,
@@ -200,7 +287,7 @@ export async function uploadVolunteerPhotoToSupabase(
         });
 
       if (!error && data) {
-        const { data: publicUrlData } = supabase.storage
+        const { data: publicUrlData } = client.storage
           .from("cms-media")
           .getPublicUrl(data.path);
         onProgress?.(100, "Upload complete!");

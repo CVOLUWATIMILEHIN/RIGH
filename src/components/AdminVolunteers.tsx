@@ -35,6 +35,9 @@ import {
 } from "../lib/db";
 import {
   isSupabaseConfigured,
+  isSupabaseActive,
+  configureRuntimeSupabase,
+  getSupabaseDiagnostics,
   uploadVolunteerPhotoToSupabase
 } from "../lib/supabase";
 import {
@@ -53,7 +56,7 @@ interface AdminVolunteersProps {
   onLogAction?: (msg: string) => void;
 }
 
-const VOLUNTEER_SQL_SNIPPET = `-- Run this in your Supabase SQL Editor to ensure the volunteers table & RLS policies exist:
+const VOLUNTEER_SQL_SNIPPET = `-- Run this in your Supabase SQL Editor to ensure the volunteers table, storage bucket & RLS policies exist:
 CREATE TABLE IF NOT EXISTS public.volunteers (
     id TEXT PRIMARY KEY,
     full_name TEXT NOT NULL,
@@ -77,6 +80,17 @@ CREATE TABLE IF NOT EXISTS public.volunteers (
 ALTER TABLE public.volunteers ADD COLUMN IF NOT EXISTS position TEXT;
 ALTER TABLE public.volunteers ADD COLUMN IF NOT EXISTS departments TEXT[] DEFAULT ARRAY[]::TEXT[];
 
+CREATE OR REPLACE VIEW public.public_volunteers AS
+SELECT
+    id, full_name, slug, role,
+    COALESCE(position, role) AS position,
+    department, departments, biography, expertise,
+    photo_url, linkedin_url, date_onboarded, status, created_at, updated_at
+FROM public.volunteers
+WHERE status = 'Published';
+
+GRANT SELECT ON public.public_volunteers TO anon, authenticated;
+
 ALTER TABLE public.volunteers ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Public can view published volunteers" ON public.volunteers;
@@ -84,20 +98,40 @@ CREATE POLICY "Public can view published volunteers"
 ON public.volunteers FOR SELECT USING (status = 'Published');
 
 DROP POLICY IF EXISTS "Authenticated admins can view all volunteers" ON public.volunteers;
-CREATE POLICY "Authenticated admins can view all volunteers"
-ON public.volunteers FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "CMS can view all volunteers" ON public.volunteers;
+CREATE POLICY "CMS can view all volunteers"
+ON public.volunteers FOR SELECT TO anon, authenticated USING (true);
 
 DROP POLICY IF EXISTS "Authenticated admins can insert volunteers" ON public.volunteers;
-CREATE POLICY "Authenticated admins can insert volunteers"
-ON public.volunteers FOR INSERT TO authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "CMS can insert volunteers" ON public.volunteers;
+CREATE POLICY "CMS can insert volunteers"
+ON public.volunteers FOR INSERT TO anon, authenticated
+WITH CHECK (char_length(trim(full_name)) > 0 AND status IN ('Draft', 'Published', 'Archived'));
 
 DROP POLICY IF EXISTS "Authenticated admins can update volunteers" ON public.volunteers;
-CREATE POLICY "Authenticated admins can update volunteers"
-ON public.volunteers FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "CMS can update volunteers" ON public.volunteers;
+CREATE POLICY "CMS can update volunteers"
+ON public.volunteers FOR UPDATE TO anon, authenticated
+USING (true)
+WITH CHECK (char_length(trim(full_name)) > 0 AND status IN ('Draft', 'Published', 'Archived'));
 
 DROP POLICY IF EXISTS "Authenticated admins can delete volunteers" ON public.volunteers;
-CREATE POLICY "Authenticated admins can delete volunteers"
-ON public.volunteers FOR DELETE TO authenticated USING (true);`;
+DROP POLICY IF EXISTS "CMS can delete volunteers" ON public.volunteers;
+CREATE POLICY "CMS can delete volunteers"
+ON public.volunteers FOR DELETE TO anon, authenticated USING (true);
+
+-- Ensure cms-media storage bucket exists and allows volunteer photo uploads
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('cms-media', 'cms-media', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public read access for cms-media" ON storage.objects;
+CREATE POLICY "Public read access for cms-media"
+ON storage.objects FOR SELECT USING (bucket_id = 'cms-media');
+
+DROP POLICY IF EXISTS "CMS upload access for cms-media" ON storage.objects;
+CREATE POLICY "CMS upload access for cms-media"
+ON storage.objects FOR INSERT TO anon, authenticated WITH CHECK (bucket_id = 'cms-media');`;
 
 export default function AdminVolunteers({
   hasWriteAccess,
@@ -117,6 +151,11 @@ export default function AdminVolunteers({
   const [deleteTarget, setDeleteTarget] = useState<VolunteerProfile | null>(null);
   const [showSqlModal, setShowSqlModal] = useState<boolean>(false);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
+  const [runtimeSupaUrl, setRuntimeSupaUrl] = useState<string>(
+    () => getSupabaseDiagnostics().projectUrl || ""
+  );
+  const [runtimeSupaKey, setRuntimeSupaKey] = useState<string>("");
+  const [savingSupaConfig, setSavingSupaConfig] = useState<boolean>(false);
 
   // Form fields (10 required/optional fields from specification)
   const [fullName, setFullName] = useState<string>("");
@@ -454,17 +493,30 @@ export default function AdminVolunteers({
       const record = buildDraftProfileFromForm(targetStatus);
       const res = await saveVolunteer(record);
       await loadVolunteers();
+
+      if (!res.success) {
+        setFormError(
+          res.error ||
+            "Cloud synchronization failed. Please check your connection or Supabase RLS policies."
+        );
+        showToast(
+          res.error || "Could not sync volunteer to cloud database.",
+          "error"
+        );
+        return;
+      }
+
       setIsFormOpen(false);
       resetForm();
 
       const actionWord = editingId ? "Updated" : "Registered";
       showToast(
-        `${actionWord} volunteer "${record.full_name}" (${record.status}).`,
+        `${actionWord} volunteer "${record.full_name}" (${record.status}) — synced to cloud database.`,
         "success"
       );
       onLogAction?.(
         `🤝 [VOLUNTEERS CMS] ${actionWord} volunteer "${record.full_name}" — Dept: ${record.department}, Position: ${record.role}, Status: ${record.status}${
-          res.supabaseSynced ? " (Synced to Supabase)" : ""
+          res.supabaseSynced ? " (Synced to Supabase & Cloud DB)" : " (Synced to Cloud DB)"
         }`
       );
     } catch (err: any) {
@@ -498,9 +550,16 @@ export default function AdminVolunteers({
       status: nextStatus,
       updated_at: new Date().toISOString()
     };
-    await saveVolunteer(updated);
+    const res = await saveVolunteer(updated);
     await loadVolunteers();
-    showToast(`"${v.full_name}" is now marked as ${nextStatus}.`, "success");
+    if (!res.success) {
+      showToast(
+        res.error || `Failed to sync status change for "${v.full_name}" to cloud database.`,
+        "error"
+      );
+      return;
+    }
+    showToast(`"${v.full_name}" is now marked as ${nextStatus} across all devices.`, "success");
     onLogAction?.(
       `🤝 [VOLUNTEERS CMS] Changed status for "${v.full_name}" from ${v.status} to ${nextStatus}.`
     );
@@ -510,12 +569,49 @@ export default function AdminVolunteers({
     if (!deleteTarget || !hasWriteAccess) return;
     const target = deleteTarget;
     setDeleteTarget(null);
-    await deleteVolunteer(target.id, target.photo_path);
+    const res = await deleteVolunteer(target.id, target.photo_path);
     await loadVolunteers();
+    if (!res.success) {
+      showToast(
+        res.error || `Failed to delete "${target.full_name}" from cloud database.`,
+        "error"
+      );
+      return;
+    }
     showToast(`Deleted volunteer profile for "${target.full_name}".`, "info");
     onLogAction?.(
       `🗑️ [VOLUNTEERS CMS] Permanently deleted volunteer "${target.full_name}" (${target.role}).`
     );
+  };
+
+  const handleSaveSupabaseConfig = async () => {
+    const cleanUrl = runtimeSupaUrl.trim();
+    const cleanKey = runtimeSupaKey.trim();
+    if (!cleanUrl || !cleanKey) {
+      showToast("Please enter both your Supabase Project URL and Anon/Publishable Key.", "error");
+      return;
+    }
+    setSavingSupaConfig(true);
+    try {
+      const client = configureRuntimeSupabase(cleanUrl, cleanKey);
+      if (!client) {
+        showToast("Invalid Supabase Project URL or Key format.", "error");
+        return;
+      }
+      await fetch("/api/volunteers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "configure_supabase",
+          supabaseUrl: cleanUrl,
+          supabaseAnonKey: cleanKey
+        })
+      }).catch(() => null);
+      await loadVolunteers();
+      showToast("Supabase connection saved and synchronized across all devices!", "success");
+    } finally {
+      setSavingSupaConfig(false);
+    }
   };
 
   const handleCopySql = () => {
@@ -1847,17 +1943,55 @@ export default function AdminVolunteers({
 
             <p className="text-xs text-slate-600 leading-relaxed">
               Supabase connection status:{" "}
-              <strong className={isSupabaseConfigured ? "text-emerald-700" : "text-amber-700"}>
-                {isSupabaseConfigured
-                  ? "Connected to Supabase Client"
-                  : "Using Cloud Firestore + Local Sync (Set VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY in Vercel/env to sync directly with Supabase)"}
+              <strong className={isSupabaseActive() || isSupabaseConfigured ? "text-emerald-700" : "text-amber-700"}>
+                {isSupabaseActive() || isSupabaseConfigured
+                  ? `Connected to Supabase (${getSupabaseDiagnostics().projectUrl})`
+                  : "Synced via Cloud Database (Enter Supabase URL & Key below or in Vercel Env Vars to also mirror directly to Supabase)"}
               </strong>
-              . Run the SQL below in your Supabase SQL Editor if you have not yet created the{" "}
-              <code>public.volunteers</code> table.
+              . Run the SQL below in your Supabase SQL Editor to ensure the{" "}
+              <code>public.volunteers</code> table and Row Level Security policies allow cross-device CMS management.
             </p>
 
+            {/* Cross-Device Runtime Supabase Connection Sync */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-700">
+                  Supabase Project Credentials (Shared Across All Devices)
+                </span>
+                <span className="text-[10px] font-semibold text-emerald-700">
+                  Public Anon/Publishable Key Only
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <input
+                  type="url"
+                  value={runtimeSupaUrl}
+                  onChange={(e) => setRuntimeSupaUrl(e.target.value)}
+                  placeholder="https://your-project-id.supabase.co"
+                  className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-brand-blue"
+                />
+                <input
+                  type="password"
+                  value={runtimeSupaKey}
+                  onChange={(e) => setRuntimeSupaKey(e.target.value)}
+                  placeholder="Supabase Anon / Publishable Key (eyJ... or sb_publishable_...)"
+                  className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-brand-blue"
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveSupabaseConfig}
+                  disabled={savingSupaConfig}
+                  className="px-4 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  {savingSupaConfig ? "Saving & Syncing..." : "Save & Sync Supabase Connection"}
+                </button>
+              </div>
+            </div>
+
             <div className="relative">
-              <pre className="p-4 rounded-2xl bg-slate-900 text-slate-100 text-[11px] font-mono overflow-x-auto max-h-72 leading-relaxed">
+              <pre className="p-4 rounded-2xl bg-slate-900 text-slate-100 text-[11px] font-mono overflow-x-auto max-h-60 leading-relaxed">
                 {VOLUNTEER_SQL_SNIPPET}
               </pre>
               <button

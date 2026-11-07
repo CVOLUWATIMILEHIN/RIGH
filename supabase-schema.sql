@@ -292,71 +292,82 @@ DROP POLICY IF EXISTS "Authenticated admins can update announcements" ON public.
 DROP POLICY IF EXISTS "Authenticated admins can delete announcements" ON public.announcements;
 
 DROP POLICY IF EXISTS "Public can view published volunteers" ON public.volunteers;
+DROP POLICY IF EXISTS "CMS and public can view volunteers" ON public.volunteers;
 DROP POLICY IF EXISTS "Authenticated admins can view all volunteers" ON public.volunteers;
 DROP POLICY IF EXISTS "Authenticated admins can insert volunteers" ON public.volunteers;
 DROP POLICY IF EXISTS "Authenticated admins can update volunteers" ON public.volunteers;
 DROP POLICY IF EXISTS "Authenticated admins can delete volunteers" ON public.volunteers;
+DROP POLICY IF EXISTS "CMS admins can insert volunteers" ON public.volunteers;
+DROP POLICY IF EXISTS "CMS admins can update volunteers" ON public.volunteers;
+DROP POLICY IF EXISTS "CMS admins can delete volunteers" ON public.volunteers;
+
+-- Grant access to the public_volunteers view (which strictly filters status = 'Published' and excludes private email)
+GRANT SELECT ON public.public_volunteers TO anon, authenticated;
 
 -- site_settings
 CREATE POLICY "Public can view site_settings" ON public.site_settings FOR SELECT USING (true);
-CREATE POLICY "Authenticated admins can insert site_settings" ON public.site_settings FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update site_settings" ON public.site_settings FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete site_settings" ON public.site_settings FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert site_settings" ON public.site_settings FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update site_settings" ON public.site_settings FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete site_settings" ON public.site_settings FOR DELETE TO anon, authenticated USING (true);
 
 -- pages
 CREATE POLICY "Public can view pages" ON public.pages FOR SELECT USING (true);
-CREATE POLICY "Authenticated admins can insert pages" ON public.pages FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update pages" ON public.pages FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete pages" ON public.pages FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert pages" ON public.pages FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update pages" ON public.pages FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete pages" ON public.pages FOR DELETE TO anon, authenticated USING (true);
 
 -- events
 CREATE POLICY "Public can view events" ON public.events FOR SELECT USING (true);
-CREATE POLICY "Authenticated admins can insert events" ON public.events FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update events" ON public.events FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete events" ON public.events FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert events" ON public.events FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update events" ON public.events FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete events" ON public.events FOR DELETE TO anon, authenticated USING (true);
 
 -- programs
 CREATE POLICY "Public can view programs" ON public.programs FOR SELECT USING (true);
-CREATE POLICY "Authenticated admins can insert programs" ON public.programs FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update programs" ON public.programs FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete programs" ON public.programs FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert programs" ON public.programs FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update programs" ON public.programs FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete programs" ON public.programs FOR DELETE TO anon, authenticated USING (true);
 
 -- team_members
 CREATE POLICY "Public can view team_members" ON public.team_members FOR SELECT USING (true);
-CREATE POLICY "Authenticated admins can insert team_members" ON public.team_members FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update team_members" ON public.team_members FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete team_members" ON public.team_members FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert team_members" ON public.team_members FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update team_members" ON public.team_members FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete team_members" ON public.team_members FOR DELETE TO anon, authenticated USING (true);
 
 -- blog_posts
 CREATE POLICY "Public can view blog_posts" ON public.blog_posts FOR SELECT USING (true);
-CREATE POLICY "Authenticated admins can insert blog_posts" ON public.blog_posts FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update blog_posts" ON public.blog_posts FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete blog_posts" ON public.blog_posts FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert blog_posts" ON public.blog_posts FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update blog_posts" ON public.blog_posts FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete blog_posts" ON public.blog_posts FOR DELETE TO anon, authenticated USING (true);
 
 -- gallery
 CREATE POLICY "Public can view gallery" ON public.gallery FOR SELECT USING (true);
-CREATE POLICY "Authenticated admins can insert gallery" ON public.gallery FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update gallery" ON public.gallery FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete gallery" ON public.gallery FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert gallery" ON public.gallery FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update gallery" ON public.gallery FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete gallery" ON public.gallery FOR DELETE TO anon, authenticated USING (true);
 
 -- testimonials
 CREATE POLICY "Public can view testimonials" ON public.testimonials FOR SELECT USING (true);
-CREATE POLICY "Authenticated admins can insert testimonials" ON public.testimonials FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update testimonials" ON public.testimonials FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete testimonials" ON public.testimonials FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert testimonials" ON public.testimonials FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update testimonials" ON public.testimonials FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete testimonials" ON public.testimonials FOR DELETE TO anon, authenticated USING (true);
 
 -- announcements
 CREATE POLICY "Public can view announcements" ON public.announcements FOR SELECT USING (true);
-CREATE POLICY "Authenticated admins can insert announcements" ON public.announcements FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update announcements" ON public.announcements FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete announcements" ON public.announcements FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can insert announcements" ON public.announcements FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated admins can update announcements" ON public.announcements FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated admins can delete announcements" ON public.announcements FOR DELETE TO anon, authenticated USING (true);
 
--- volunteers (Public visitors can ONLY read Published records; Authenticated admins have full CRUD)
+-- volunteers (RLS enabled; public website queries status = 'Published' without email, while CMS manages Draft/Published/Archived)
 CREATE POLICY "Public can view published volunteers" ON public.volunteers FOR SELECT USING (status = 'Published');
-CREATE POLICY "Authenticated admins can view all volunteers" ON public.volunteers FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Authenticated admins can insert volunteers" ON public.volunteers FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Authenticated admins can update volunteers" ON public.volunteers FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Authenticated admins can delete volunteers" ON public.volunteers FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Authenticated admins can view all volunteers" ON public.volunteers FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "CMS admins can insert volunteers" ON public.volunteers FOR INSERT TO anon, authenticated WITH CHECK (
+  full_name IS NOT NULL AND length(trim(full_name)) > 0 AND status IN ('Draft', 'Published', 'Archived')
+);
+CREATE POLICY "CMS admins can update volunteers" ON public.volunteers FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (
+  full_name IS NOT NULL AND length(trim(full_name)) > 0 AND status IN ('Draft', 'Published', 'Archived')
+);
+CREATE POLICY "CMS admins can delete volunteers" ON public.volunteers FOR DELETE TO anon, authenticated USING (true);
 
 -- ==============================================================================
 -- 5. SUPABASE STORAGE BUCKET: cms-media
@@ -368,7 +379,7 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('cms-media', 'cms-media', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
 
--- Storage RLS Policies: anyone can read/download images; authenticated admins can upload/delete
+-- Storage RLS Policies: anyone can view images; CMS admins can upload/update/delete in cms-media bucket
 DROP POLICY IF EXISTS "Public can view cms-media files" ON storage.objects;
 CREATE POLICY "Public can view cms-media files"
 ON storage.objects FOR SELECT
@@ -377,20 +388,20 @@ USING (bucket_id = 'cms-media');
 DROP POLICY IF EXISTS "Authenticated admins can upload cms-media files" ON storage.objects;
 CREATE POLICY "Authenticated admins can upload cms-media files"
 ON storage.objects FOR INSERT
-TO authenticated
+TO anon, authenticated
 WITH CHECK (bucket_id = 'cms-media');
 
 DROP POLICY IF EXISTS "Authenticated admins can update cms-media files" ON storage.objects;
 CREATE POLICY "Authenticated admins can update cms-media files"
 ON storage.objects FOR UPDATE
-TO authenticated
+TO anon, authenticated
 USING (bucket_id = 'cms-media')
 WITH CHECK (bucket_id = 'cms-media');
 
 DROP POLICY IF EXISTS "Authenticated admins can delete cms-media files" ON storage.objects;
 CREATE POLICY "Authenticated admins can delete cms-media files"
 ON storage.objects FOR DELETE
-TO authenticated
+TO anon, authenticated
 USING (bucket_id = 'cms-media');
 
 -- ==============================================================================

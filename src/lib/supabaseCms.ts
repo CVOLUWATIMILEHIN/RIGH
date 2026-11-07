@@ -6,7 +6,7 @@
  * blog_posts, gallery, testimonials, announcements) using Supabase as the primary shared database.
  */
 
-import { supabase, isSupabaseConfigured } from "./supabase";
+import { supabase, isSupabaseConfigured, getSupabaseClient } from "./supabase";
 import { CMSConfig, DEFAULT_CMS, normalizeHeroSlides } from "../components/AdminCMS";
 import { EventModel } from "../components/AdminEvents";
 import { TeamMember } from "./db";
@@ -1029,7 +1029,8 @@ export function generateVolunteerSlug(fullName: string, idSuffix?: string): stri
 export async function fetchVolunteersFromSupabase(options?: {
   publicOnly?: boolean;
 }): Promise<{ data: VolunteerRecord[] | null; error: string | null }> {
-  if (!supabase || !isSupabaseConfigured) {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured) {
     return { data: null, error: "Supabase client not configured" };
   }
 
@@ -1038,7 +1039,7 @@ export async function fetchVolunteersFromSupabase(options?: {
       "id, full_name, slug, role, department, biography, expertise, photo_url, photo_path, linkedin_url, date_onboarded, status, created_at, updated_at";
     const adminColumns = `${publicColumns}, email`;
 
-    let query = supabase
+    let query = client
       .from("volunteers")
       .select(options?.publicOnly ? publicColumns : adminColumns)
       .order("date_onboarded", { ascending: false });
@@ -1101,7 +1102,8 @@ export async function fetchVolunteersFromSupabase(options?: {
 export async function saveVolunteerToSupabase(
   volunteer: VolunteerRecord
 ): Promise<{ success: boolean; error: string | null }> {
-  if (!supabase || !isSupabaseConfigured) {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured) {
     return { success: false, error: "Supabase credentials not set in environment." };
   }
 
@@ -1116,10 +1118,14 @@ export async function saveVolunteerToSupabase(
       volunteer.department
     );
 
+    const baseSlug =
+      volunteer.slug ||
+      generateVolunteerSlug(volunteer.full_name, volunteer.id.slice(-4));
+
     const payload = {
       id: volunteer.id,
       full_name: volunteer.full_name.trim(),
-      slug: volunteer.slug || generateVolunteerSlug(volunteer.full_name, volunteer.id.slice(-4)),
+      slug: baseSlug,
       role: resolvedPosition,
       department: departmentStr,
       biography: volunteer.biography.trim(),
@@ -1133,7 +1139,17 @@ export async function saveVolunteerToSupabase(
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase.from("volunteers").upsert(payload, { onConflict: "id" });
+    let { error } = await client.from("volunteers").upsert(payload, { onConflict: "id" });
+    if (error && error.message && error.message.toLowerCase().includes("slug")) {
+      // Retry with a guaranteed unique slug suffix if slug constraint collided
+      const retryPayload = {
+        ...payload,
+        slug: `${baseSlug}-${Date.now().toString().slice(-4)}`
+      };
+      const retryRes = await client.from("volunteers").upsert(retryPayload, { onConflict: "id" });
+      error = retryRes.error;
+    }
+
     if (error) {
       return { success: false, error: error.message };
     }
@@ -1150,15 +1166,16 @@ export async function deleteVolunteerFromSupabase(
   id: string,
   photoPath?: string
 ): Promise<{ success: boolean; error: string | null }> {
-  if (!supabase || !isSupabaseConfigured) {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured) {
     return { success: false, error: "Supabase credentials not set in environment." };
   }
 
   try {
     if (photoPath && photoPath.startsWith("volunteers/")) {
-      await supabase.storage.from("cms-media").remove([photoPath]).catch(() => null);
+      await client.storage.from("cms-media").remove([photoPath]).catch(() => null);
     }
-    const { error } = await supabase.from("volunteers").delete().eq("id", id);
+    const { error } = await client.from("volunteers").delete().eq("id", id);
     if (error) {
       return { success: false, error: error.message };
     }
