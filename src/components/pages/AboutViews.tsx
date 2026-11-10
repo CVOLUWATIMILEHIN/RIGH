@@ -11,6 +11,7 @@ import { HistoricalRecord } from "../../types";
 import founderPortrait from "../../assets/images/FOUNDER.jpg";
 import mediaLeadPortrait from "../../assets/images/vincent_oluwatimilehin_media_tech_team_lead.png";
 import estherPortrait from "../../assets/images/abana_ogechukwu_esther_content_team_lead.jpg";
+import godwinPortrait from "../../assets/images/godwin_admin_manager.jpg";
 import { getCMSConfig } from "../AdminCMS";
 import { PageContainer } from "../PageContainer";
 import AboutOverviewRedesign from "./AboutOverviewRedesign";
@@ -75,7 +76,7 @@ const teamMembers: TeamMember[] = [
     title: "Manager (Admin)",
     credentials: "Administrative Lead",
     role: "Admin & Operations Coordinator",
-    photo: null,
+    photo: godwinPortrait,
     category: "executive",
     bio: "Godwin directs central administration and organizational logistics at Right Minds Africa Hub, managing communication systems, scheduling, and strategic state command administration. Under his oversight, workflows run with optimal operational precision.",
     hubs: ["National Headquarters Hub"],

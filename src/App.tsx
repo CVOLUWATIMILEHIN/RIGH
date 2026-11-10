@@ -20,6 +20,7 @@ import JoinModal from "./components/JoinModal";
 import CheckInModal from "./components/CheckInModal";
 import VerifyEmailPage from "./components/VerifyEmailPage";
 import LiveChatWidget from "./components/LiveChatWidget";
+import { ScrollProgress } from "./components/Motion";
 import { getMarqueeConfig, MarqueeConfig, DEFAULT_MARQUEE_CONFIG, subscribeToRealtimeUpdates } from "./lib/db";
 import { useBrandConfig } from "./lib/brandConfig";
 
@@ -507,6 +508,9 @@ export default function App() {
   return (
     <div className="relative min-h-screen bg-white font-sans text-slate-900 antialiased selection:bg-brand-orange/20 selection:text-brand-blue overflow-x-hidden">
       
+      {/* Scroll progress bar */}
+      {currentView !== "admin" && <ScrollProgress />}
+
       {/* Global Join/Onboarding Modal */}
       <JoinModal
         isOpen={isJoinOpen}

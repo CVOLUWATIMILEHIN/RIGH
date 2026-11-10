@@ -23,6 +23,7 @@ import founderPortrait from "../assets/images/FOUNDER.jpg";
 import PageContainer from "./PageContainer";
 import mediaLeadPortrait from "../assets/images/vincent_oluwatimilehin_media_tech_team_lead.png";
 import estherPortrait from "../assets/images/abana_ogechukwu_esther_content_team_lead.jpg";
+import godwinPortrait from "../assets/images/godwin_admin_manager.jpg";
 import { TeamMember, getTeamMembers, saveTeamMember, deleteTeamMember } from "../lib/db";
 import { fetchAllCMSFromSupabase, subscribeToSupabaseCMSRealtime } from "../lib/supabaseCms";
 
@@ -67,7 +68,7 @@ const DEFAULT_MEMBERS: TeamMember[] = [
     title: "Manager (Admin)",
     credentials: "Administrative Lead",
     role: "Admin & Operations Coordinator",
-    photo: null,
+    photo: godwinPortrait,
     bio: "Godwin directs central administration and organizational logistics at Right Minds Africa Hub, managing communication systems, scheduling, and strategic state command administration. Under his oversight, workflows run with optimal operational precision.",
     hubs: ["National Headquarters Hub"],
     socials: {
@@ -197,6 +198,12 @@ export default function CoreTeam({ onBack }: CoreTeamProps) {
               return { ...m, photo: founderPortrait };
             }
           }
+          if (m.id === "godwin_admin") {
+            if (!m.photo || m.photo !== godwinPortrait) {
+              hasChanges = true;
+              return { ...m, photo: godwinPortrait };
+            }
+          }
           return m;
         });
 
@@ -221,7 +228,7 @@ export default function CoreTeam({ onBack }: CoreTeamProps) {
         if (hasChanges) {
           // Sync corrected profiles back to database & localStorage
           for (const m of cleaned) {
-            if (m.id === "olasunde_louis" || m.id === "gracious_esther" || m.id === "ogeabana_esther") {
+            if (m.id === "olasunde_louis" || m.id === "gracious_esther" || m.id === "ogeabana_esther" || m.id === "godwin_admin") {
               await saveTeamMember(m);
             }
           }
@@ -243,7 +250,10 @@ export default function CoreTeam({ onBack }: CoreTeamProps) {
     // 1. Live load from Supabase
     fetchAllCMSFromSupabase().then((data) => {
       if (data && data.teamMembers && data.teamMembers.length > 0) {
-        setMembers(data.teamMembers);
+        const synced = data.teamMembers.map((m) =>
+          m.id === "godwin_admin" && !m.photo ? { ...m, photo: godwinPortrait } : m
+        );
+        setMembers(synced);
       } else {
         loadMembers();
       }
